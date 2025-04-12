@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { generateFlashcards } from "../config/gemini";
 import { updateUserProgress } from "../config/database";
 import { useAuth } from "../context/AuthContext";
+import { getLearningPaths } from "../config/database"; // Import this too if not already
 
 const CustomCard = ({ card, isFlipped, onClick }) => (
   <div className="relative w-full h-[400px] cursor-pointer" onClick={onClick}>
@@ -48,6 +49,65 @@ const Flashcards = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const { user } = useAuth();
+  const [paths, setPaths] = useState([]);
+  const [selectedPathId, setSelectedPathId] = useState("");
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [selectedModule, setSelectedModule] = useState("all");
+
+  useEffect(() => {
+    const fetchPaths = async () => {
+      try {
+        const response = await getLearningPaths(user?.$id);
+        const processed = response.documents.map(path => {
+          let modules = [];
+          if (typeof path.modules === "string") {
+            try {
+              modules = JSON.parse(path.modules).map((m, idx) => ({
+                title: typeof m === "string" ? m.split(":").pop().trim() : m.title || `Module ${idx + 1}`
+              }));
+            } catch {
+              modules = [];
+            }
+          } else if (Array.isArray(path.modules)) {
+            modules = path.modules.map((m, idx) => ({
+              title: typeof m === "string" ? m.split(":").pop().trim() : m.title || `Module ${idx + 1}`
+            }));
+          }
+
+          return { ...path, modules };
+        });
+
+        setPaths(processed);
+      } catch (err) {
+        console.error("Failed to fetch paths:", err);
+      }
+    };
+
+    if (user?.$id) fetchPaths();
+  }, [user]);
+
+  const handlePathChange = (e) => {
+    const id = e.target.value;
+    setSelectedPathId(id);
+    const path = paths.find(p => p.$id === id);
+    setSelectedPath(path || null);
+    setModules(path?.modules || []);
+    setSelectedModule("all");
+    setTopic("");
+  };
+
+  const handleModuleChange = (e) => {
+    const index = e.target.value;
+    setSelectedModule(index);
+
+    if (index === "all" || !modules[index]) {
+      setTopic(selectedPath?.careerName || "");
+    } else {
+      setTopic(modules[index].title || "");
+    }
+  };
+
 
   const fetchFlashcards = async () => {
     if (!topic.trim() || numCards < 1) {
@@ -135,6 +195,33 @@ const Flashcards = () => {
           </p>
         </motion.div>
 
+        {paths.length === 0 && (
+  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-start gap-3 mb-6">
+    <svg
+      className="w-5 h-5 mt-1 flex-shrink-0 text-red-500"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 
+        1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 
+        0L3.34 16c-.77 1.333.192 3 1.732 3z"
+      />
+    </svg>
+    <div>
+      <p className="font-medium">No Learning Path Found</p>
+      <p className="text-sm text-red-600">
+        Please create a learning path first to generate flashcards for a topic.
+      </p>
+    </div>
+  </div>
+)}
+
+
         {/* Enhanced Input Section */}
         <motion.div
           className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg border border-blue-100/30 p-6"
@@ -148,22 +235,63 @@ const Flashcards = () => {
                 <span className="w-1 h-4 bg-blue-500 rounded-full"></span>
                 Topic
               </label>
-              <input
-                type="text"
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                placeholder="e.g., JavaScript Basics, World History"
-                className="w-full px-4 py-3 rounded-xl bg-white border-2 border-blue-100 focus:border-blue-300 focus:ring-4 focus:ring-blue-100 transition-all outline-none"
-              />
+              {/* Select Path */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Select Learning Path</label>
+                <select
+                  value={selectedPathId}
+                  onChange={handlePathChange}
+                  className="w-full px-4 py-3 rounded-xl border-2 border-blue-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">-- Select Learning Path --</option>
+                  {paths.map((path) => (
+                    <option key={path.$id} value={path.$id}>
+                      {path.careerName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Select Module */}
+              {modules.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Select Module</label>
+                  <select
+                    value={selectedModule}
+                    onChange={handleModuleChange}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-blue-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    <option value="all">All Modules</option>
+                    {modules.map((mod, idx) => (
+                      <option key={idx} value={idx.toString()}>
+                        Module {idx + 1}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Topic (auto-filled) */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700">Flashcard Topic</label>
+                <input
+                  type="text"
+                  value={topic}
+                  readOnly
+                  className="w-full px-4 py-3 rounded-xl bg-white border-2 border-blue-100 focus:ring-2 focus:ring-blue-500 outline-none"
+                  placeholder="Select a module to auto-fill"
+                />
+              </div>
+
             </div>
-            
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
                 <span className="w-1 h-4 bg-indigo-500 rounded-full"></span>
                 Cards
               </label>
               <input
-                type="number"
+                type="text"
                 value={numCards}
                 onChange={(e) => setNumCards(Math.max(1, parseInt(e.target.value) || 1))}
                 min="1"
@@ -178,8 +306,8 @@ const Flashcards = () => {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className={`w-full md:w-auto px-6 py-3 rounded-xl font-medium text-white shadow-lg transition-all
-                  ${loading 
-                    ? 'bg-gray-400 cursor-not-allowed' 
+                  ${loading
+                    ? 'bg-gray-400 cursor-not-allowed'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-blue-500/20'
                   }`}
               >
@@ -256,7 +384,7 @@ const Flashcards = () => {
         )}
 
         {/* Error Message */}
-        <AnimatePresence>
+        {/* <AnimatePresence>
           {error && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -267,7 +395,7 @@ const Flashcards = () => {
               {error}
             </motion.div>
           )}
-        </AnimatePresence>
+        </AnimatePresence> */}
       </div>
     </motion.div>
   );

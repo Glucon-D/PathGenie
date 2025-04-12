@@ -32,6 +32,7 @@ const ModuleDetails = () => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [contentError, setContentError] = useState(false);
   const [moduleName, setModuleName] = useState("");
+  const [modelUsed, setModelUsed] = useState("GROQ (Llama 3 70B)");
   const databases = new Databases(client);
 
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
@@ -60,13 +61,62 @@ const ModuleDetails = () => {
 
       setModuleName(moduleTitle);
 
-      const aiResponse = await generateModuleContent(moduleTitle, {
-        detailed: expanded,
-        includeExamples: expanded,
-      });
-
-      if (!aiResponse.sections || aiResponse.sections.length === 0)
-        throw new Error("Empty content");
+      // Define max retries and attempt counter
+      const maxRetries = 2;
+      let attempts = 0;
+      let success = false;
+      let aiResponse;
+      
+      // Retry logic for handling potential hallucinations
+      while (attempts <= maxRetries && !success) {
+        try {
+          aiResponse = await generateModuleContent(moduleTitle, {
+            detailed: expanded,
+            includeExamples: expanded,
+            // Add specific constraints to prevent hallucinations
+            constrainToFacts: true,
+            preventHallucination: true
+          });
+          
+          // Check if a response header was returned indicating which model was used
+          if (aiResponse.modelUsed) {
+            setModelUsed(aiResponse.modelUsed);
+          } else {
+            setModelUsed("GROQ (Llama 3)"); // Default if not specified
+          }
+          
+          // Validate the response has essential properties
+          if (!aiResponse || !aiResponse.sections || aiResponse.sections.length === 0) {
+            throw new Error("Invalid content structure");
+          }
+          
+          // Additional validation for content quality
+          const isContentValid = aiResponse.sections.every(section => {
+            return (
+              section.title && 
+              section.content && 
+              section.content.length > 100 && // Minimum content length
+              !section.content.includes("I don't know") && // Avoid uncertainty phrases
+              !section.content.includes("I'm not sure") &&
+              !section.content.includes("As an AI")  // Avoid self-references
+            );
+          });
+          
+          if (isContentValid) {
+            success = true;
+          } else {
+            throw new Error("Generated content didn't meet quality standards");
+          }
+        } catch (err) {
+          attempts++;
+          console.warn(`Attempt ${attempts}/${maxRetries} failed: ${err.message}`);
+          if (attempts > maxRetries) {
+            throw err; // Re-throw if we've exhausted retries
+          }
+          // Short delay before retry
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
 
       if (expanded) {
         setIsExpanded(true);
@@ -92,6 +142,13 @@ const ModuleDetails = () => {
     }
   };
 
+  // Add a retry handler for content generation errors
+  const handleRetryContent = () => {
+    setContentError(false);
+    setError("");
+    loadContent(false); // Reload content from scratch
+  };
+  
   const handleComplete = async () => {
     try {
       const moduleIndexNum = parseInt(moduleIndex, 10);
@@ -147,7 +204,15 @@ const ModuleDetails = () => {
         transition={{ duration: 0.5 }}
         className="text-gray-600"
       >
-        Preparing your learning materials...
+        Preparing your learning materials with AI...
+      </motion.p>
+      <motion.p
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5, delay: 0.5 }}
+        className="text-xs text-gray-500"
+      >
+        Using GROQ to find the best model for your content
       </motion.p>
     </div>
   );
@@ -266,6 +331,7 @@ const ModuleDetails = () => {
               <h1 className="text-lg md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                 {content?.title || moduleName}
               </h1>
+              <p className="text-xs text-gray-500 mt-1">Content powered by {modelUsed}</p>
             </div>
           </div>
         </motion.div>

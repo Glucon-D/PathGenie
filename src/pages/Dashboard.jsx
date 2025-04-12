@@ -15,20 +15,73 @@ const Dashboard = () => {
   const [quizScores, setQuizScores] = useState([]);
   const [currentStreak, setCurrentStreak] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [userStats, setUserStats] = useState({
+    completedPaths: 0,
+    totalModulesCompleted: 0,
+    avgQuizScore: 0
+  });
   
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const CAREER_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
   const ASSESSMENTS_COLLECTION_ID = import.meta.env.VITE_ASSESSMENTS_COLLECTION_ID;
+  const USER_PROGRESS_COLLECTION_ID = import.meta.env.VITE_USER_PROGRESS_COLLECTION_ID;
 
   useEffect(() => {
-    fetchUserProgress();
-    fetchPaths();
+    const fetchAllUserData = async () => {
+      setIsLoading(true);
+      try {
+        await Promise.all([
+          fetchUserProgress(),
+          fetchPaths(),
+          fetchRecentActivity()
+        ]);
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        toast.error("Failed to load dashboard data");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchAllUserData();
   }, []);
+
+  const fetchRecentActivity = async () => {
+    try {
+      const user = await account.get();
+      
+      // Fetch recent assessments
+      const assessmentsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        ASSESSMENTS_COLLECTION_ID,
+        [
+          Query.equal("userID", user.$id),
+          Query.orderDesc("completedAt"),
+          Query.limit(5)
+        ]
+      );
+      
+      const activities = assessmentsResponse.documents.map(assessment => ({
+        type: assessment.quizScore ? 'quiz' : 'flashcard',
+        moduleID: assessment.moduleID,
+        moduleName: assessment.moduleName || 'Module',
+        date: assessment.completedAt,
+        score: assessment.quizScore,
+        total: assessment.quizTotal || 10,
+        flashcardsMastered: assessment.flashcardsMastered || 0
+      }));
+      
+      setRecentActivity(activities);
+      
+    } catch (error) {
+      console.error("Error fetching recent activity:", error);
+    }
+  };
 
   const fetchUserProgress = async () => {
     try {
-      setIsLoading(true);
       const user = await account.get(); // Get logged-in user
       
       // Fetch assessments for this user
@@ -41,6 +94,8 @@ const Dashboard = () => {
       // Calculate flashcard count from assessments
       let totalFlashcardsMastered = 0;
       let quizScoresData = [];
+      let totalQuizScore = 0;
+      let totalQuizCount = 0;
       
       // Process assessments data
       assessmentsResponse.documents.forEach(assessment => {
@@ -49,19 +104,32 @@ const Dashboard = () => {
         }
         
         if (assessment.quizScore) {
+          const score = parseInt(assessment.quizScore);
+          const total = parseInt(assessment.quizTotal || 10);
+          
           // Add quiz data with date and score
           quizScoresData.push({
             moduleID: assessment.moduleID,
-            score: assessment.quizScore,
-            total: assessment.quizTotal || 10, // Default to 10 if not provided
-            accuracy: ((assessment.quizScore / (assessment.quizTotal || 10)) * 100).toFixed(1),
+            moduleName: assessment.moduleName || 'Module',
+            score: score,
+            total: total,
+            accuracy: ((score / total) * 100).toFixed(1),
             date: assessment.completedAt || new Date().toISOString(),
           });
+          
+          totalQuizScore += score;
+          totalQuizCount += 1;
         }
       });
 
       setFlashcardCount(totalFlashcardsMastered);
       setQuizScores(quizScoresData);
+      
+      // Update user stats
+      setUserStats(prev => ({
+        ...prev,
+        avgQuizScore: totalQuizCount > 0 ? (totalQuizScore / totalQuizCount).toFixed(1) : 0
+      }));
       
       // Calculate streak from quiz dates
       if (quizScoresData.length > 0) {
@@ -88,14 +156,11 @@ const Dashboard = () => {
     } catch (error) {
       console.error("Error fetching user progress:", error);
       toast.error("Failed to load user progress");
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const fetchPaths = async () => {
     try {
-      setIsLoading(true);
       const user = await account.get();
       
       // Query career paths collection for this user
@@ -120,8 +185,24 @@ const Dashboard = () => {
         const incompletePaths = processedPaths.filter(
           (path) => path.progress < 100
         );
-
+        
+        const completedPaths = processedPaths.filter(
+          (path) => path.progress >= 100
+        );
+        
         setPaths(incompletePaths);
+        
+        // Calculate total completed modules
+        const totalModulesCompleted = processedPaths.reduce((total, path) => {
+          return total + (path.completedModules?.length || 0);
+        }, 0);
+        
+        // Update user stats
+        setUserStats(prev => ({
+          ...prev,
+          completedPaths: completedPaths.length,
+          totalModulesCompleted
+        }));
       } else {
         // If no paths found
         setPaths([]);
@@ -129,28 +210,6 @@ const Dashboard = () => {
     } catch (error) {
       console.error("Error fetching paths:", error);
       toast.error("Failed to load learning paths");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Function to update career path progress
-  const updatePathProgress = async (pathId, progress, completedModules) => {
-    try {
-      await databases.updateDocument(
-        DATABASE_ID,
-        CAREER_COLLECTION_ID,
-        pathId,
-        {
-          progress: progress,
-          completedModules: JSON.stringify(completedModules),
-          updatedAt: new Date().toISOString()
-        }
-      );
-      toast.success("Progress updated!");
-    } catch (error) {
-      console.error("Error updating path progress:", error);
-      toast.error("Failed to update progress");
     }
   };
 
@@ -162,8 +221,29 @@ const Dashboard = () => {
       0
     );
 
-    return (totalAccuracy / quizScores.length).toFixed(2); // Average accuracy
+    return (totalAccuracy / quizScores.length).toFixed(1); // Average accuracy
   };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Function for card skeletons
+  const CardSkeleton = () => (
+    <div className="bg-white/60 backdrop-blur-sm p-6 rounded-2xl border border-white/50 shadow-lg animate-pulse">
+      <div className="h-8 w-8 bg-gray-200 rounded mb-4"></div>
+      <div className="h-6 w-3/4 bg-gray-200 rounded mb-2"></div>
+      <div className="h-4 w-1/2 bg-gray-200 rounded mb-4"></div>
+      <div className="h-5 w-1/3 bg-gray-200 rounded"></div>
+    </div>
+  );
 
   const cards = [
     {
@@ -172,7 +252,7 @@ const Dashboard = () => {
       icon: "📚",
       gradient: "from-blue-500 to-indigo-500",
       path: "/learning-path",
-      stats: `${paths.length} paths in progress`,
+      stats: `${paths.length} ${paths.length === 1 ? 'path' : 'paths'} in progress`,
     },
     {
       title: "Flashcards",
@@ -180,7 +260,7 @@ const Dashboard = () => {
       icon: "🗂️",
       gradient: "from-purple-500 to-pink-500",
       path: "/flashcards",
-      stats: `${flashcardCount} cards mastered`,
+      stats: `${flashcardCount} ${flashcardCount === 1 ? 'card' : 'cards'} mastered`,
     },
     {
       title: "Quiz Performance",
@@ -224,17 +304,17 @@ const Dashboard = () => {
   ];
 
   return (
-    <div className="flex-1 max-w-full p-4 md:p-8 overflow-x-hidden bg-gradient-to-br from-gray-50 to-blue-50">
+    <div className="flex-1 max-w-full p-4 md:p-6 overflow-x-hidden bg-gradient-to-br from-gray-50 to-blue-50 min-h-screen">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        className="max-w-7xl mx-auto space-y-8"
+        className="max-w-7xl mx-auto space-y-6"
       >
-        {/* Enhanced Welcome Section */}
+        {/* Enhanced Welcome Section with Stats */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative overflow-hidden bg-white/30 backdrop-blur-md rounded-3xl p-8 shadow-lg border border-white/50"
+          className="relative overflow-hidden bg-white/30 backdrop-blur-md rounded-3xl p-6 md:p-8 shadow-lg border border-white/50"
         >
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-indigo-600/10" />
           <div className="relative">
@@ -245,53 +325,81 @@ const Dashboard = () => {
               className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
             >
               <div className="space-y-2">
-                <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
+                <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   Welcome back, {user?.name?.split(" ")[0] || "Learner"}! 👋
                 </h1>
                 <p className="text-gray-600">
-                  Ready to continue your learning journey?
+                  Your learning journey continues today
                 </p>
               </div>
-              <div className="flex items-center gap-4 text-sm">
-                <div className="px-4 py-2 bg-blue-100 text-blue-600 rounded-xl">
-                  Today's Streak: 🔥 {currentStreak} days
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <div className="px-4 py-2 bg-blue-100 text-blue-600 rounded-xl flex items-center gap-2">
+                  <span className="text-xl">🔥</span> {currentStreak} day streak
                 </div>
+                {isLoading ? (
+                  <div className="px-4 py-2 bg-gray-100 rounded-xl w-24 h-9 animate-pulse"></div>
+                ) : (
+                  <div className="px-4 py-2 bg-indigo-100 text-indigo-600 rounded-xl">
+                    Avg Quiz: {userStats.avgQuizScore}/10
+                  </div>
+                )}
               </div>
             </motion.div>
+            
+            {/* Stats cards */}
+            <div className="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              <div className="bg-white/40 p-4 rounded-xl shadow-sm">
+                <p className="text-gray-500 text-sm">Paths Progress</p>
+                <p className="text-2xl font-semibold">{paths.length}</p>
+              </div>
+              <div className="bg-white/40 p-4 rounded-xl shadow-sm">
+                <p className="text-gray-500 text-sm">Paths Completed</p>
+                <p className="text-2xl font-semibold">{userStats.completedPaths}</p>
+              </div>
+              <div className="bg-white/40 p-4 rounded-xl shadow-sm">
+                <p className="text-gray-500 text-sm">Modules Completed</p>
+                <p className="text-2xl font-semibold">{userStats.totalModulesCompleted}</p>
+              </div>
+              <div className="bg-white/40 p-4 rounded-xl shadow-sm">
+                <p className="text-gray-500 text-sm">Success Rate</p>
+                <p className="text-2xl font-semibold">{calculateSuccessRate()}%</p>
+              </div>
+            </div>
           </div>
         </motion.div>
 
+        {/* Enhanced Quick Actions */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {quickActions.map((action, index) => (
+            <motion.button
+              key={index}
+              onClick={() => navigate(action.path)}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              whileHover={{ scale: 1.03, y: -3 }}
+              whileTap={{ scale: 0.98 }}
+              className="group relative overflow-hidden bg-white/60 backdrop-blur-sm p-5 rounded-2xl border border-white/60 shadow transition-all duration-300"
+            >
+              <div className={`absolute inset-0 bg-gradient-to-r ${action.gradient} opacity-0 group-hover:opacity-10 transition-opacity`} />
+              <div className="relative space-y-3">
+                <span className="text-3xl block mb-2">{action.icon}</span>
+                <div>
+                  <h3 className="font-semibold text-gray-900">{action.label}</h3>
+                  <p className="text-sm text-gray-600">{action.description}</p>
+                </div>
+              </div>
+            </motion.button>
+          ))}
+        </div>
+
+        {/* Main content area with conditional loading */}
         {isLoading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[1, 2, 3].map((i) => <CardSkeleton key={i} />)}
           </div>
         ) : (
           <>
-            {/* Enhanced Quick Actions */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {quickActions.map((action, index) => (
-                <motion.button
-                  key={index}
-                  onClick={() => navigate(action.path)}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  whileHover={{ scale: 1.02, y: -5 }}
-                  whileTap={{ scale: 0.98 }}
-                  className="group relative overflow-hidden bg-white/50 backdrop-blur-sm p-6 rounded-2xl border border-white/50 shadow-lg transition-all duration-300"
-                >
-                  <div className={`absolute inset-0 bg-gradient-to-r ${action.gradient} opacity-0 group-hover:opacity-10 transition-opacity`} />
-                  <div className="relative space-y-3">
-                    <span className="text-3xl">{action.icon}</span>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{action.label}</h3>
-                      <p className="text-sm text-gray-600">{action.description}</p>
-                    </div>
-                  </div>
-                </motion.button>
-              ))}
-            </div>
-
             {/* Enhanced Main Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {cards.map((card, index) => (
@@ -305,7 +413,7 @@ const Dashboard = () => {
                     boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)"
                   }}
                   onClick={() => navigate(card.path)}
-                  className="group relative overflow-hidden bg-white/60 backdrop-blur-sm p-6 rounded-2xl border border-white/50 shadow-lg transition-all duration-300 cursor-pointer"
+                  className="group relative overflow-hidden bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-white/60 shadow transition-all duration-300 cursor-pointer"
                 >
                   <div className={`absolute inset-0 bg-gradient-to-r ${card.gradient} opacity-0 group-hover:opacity-10 transition-opacity`} />
                   <div className="relative space-y-4">
@@ -326,48 +434,142 @@ const Dashboard = () => {
               ))}
             </div>
 
-            {/* Display paths section */}
-            {paths.length > 0 && (
-              <div className="bg-white/60 backdrop-blur-sm p-6 rounded-2xl border border-white/50 shadow-lg">
-                <h2 className="text-xl font-semibold mb-4">Your Learning Paths</h2>
-                <div className="space-y-4">
-                  {paths.map((path, index) => (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 0.1 * index }}
-                      className="bg-blue-50/60 p-4 rounded-xl"
-                    >
-                      <div className="flex justify-between items-center">
-                        <h3 className="font-medium">{path.careerName}</h3>
-                        <span className="text-sm">{path.progress}% Complete</span>
-                      </div>
-                      <div className="mt-2 h-2 bg-blue-100 rounded-full">
-                        <div
-                          className="h-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
-                          style={{ width: `${path.progress}%` }}
-                        ></div>
-                      </div>
-                      <div className="mt-4">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/learning-path/${path.$id}`);
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800"
+            {/* Two-column layout for Paths and Activity */}
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+              {/* Learning Paths Column */}
+              <div className="lg:col-span-3">
+                {paths.length > 0 ? (
+                  <div className="bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-white/60 shadow">
+                    <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                      <span className="text-blue-600">📚</span> Your Learning Paths
+                    </h2>
+                    <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                      {paths.map((path, index) => (
+                        <motion.div
+                          key={index}
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.1 * index }}
+                          className="bg-blue-50/70 p-4 rounded-xl hover:bg-blue-50 transition-colors"
                         >
-                          Continue Learning
+                          <div className="flex justify-between items-center">
+                            <h3 className="font-medium text-blue-900">{path.careerName}</h3>
+                            <span className="text-sm bg-blue-100 text-blue-700 px-2.5 py-0.5 rounded-full">
+                              {path.progress}%
+                            </span>
+                          </div>
+                          <div className="mt-3 h-2.5 bg-blue-100 rounded-full">
+                            <div
+                              className="h-2.5 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                              style={{ width: `${path.progress}%` }}
+                            ></div>
+                          </div>
+                          <div className="mt-4 flex justify-between items-center">
+                            <span className="text-xs text-gray-500">
+                              {path.completedModules?.length || 0}/{path.modules?.length || 0} modules
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/learning-path/${path.$id}`);
+                              }}
+                              className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg transition-colors"
+                            >
+                              Continue
+                            </button>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                    {paths.length === 0 && (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500">No paths in progress yet</p>
+                        <button
+                          onClick={() => navigate('/learning-path')}
+                          className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+                        >
+                          Create a Learning Path
                         </button>
                       </div>
-                    </motion.div>
-                  ))}
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-white/60 shadow text-center py-12">
+                    <div className="text-5xl mb-4">🎯</div>
+                    <h3 className="text-xl font-medium mb-2">Start Your Learning Journey</h3>
+                    <p className="text-gray-500 mb-6">Create your first learning path and begin your journey to success</p>
+                    <button
+                      onClick={() => navigate('/learning-path')}
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+                    >
+                      Create Path
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Activity Column */}
+              <div className="lg:col-span-2">
+                <div className="bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-white/60 shadow">
+                  <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <span className="text-indigo-600">📊</span> Recent Activity
+                  </h2>
+                  <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {recentActivity.length > 0 ? (
+                      recentActivity.map((activity, index) => (
+                        <div key={index} className="border-l-4 border-indigo-400 pl-4 py-1">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium text-gray-800">
+                                {activity.type === 'quiz' ? '📝 Quiz' : '🗂️ Flashcards'}
+                              </p>
+                              <p className="text-sm text-gray-600">{activity.moduleName}</p>
+                            </div>
+                            {activity.type === 'quiz' && (
+                              <span className="bg-indigo-100 text-indigo-700 text-xs px-2.5 py-1 rounded-full">
+                                {activity.score}/{activity.total}
+                              </span>
+                            )}
+                            {activity.type === 'flashcard' && (
+                              <span className="bg-purple-100 text-purple-700 text-xs px-2.5 py-1 rounded-full">
+                                +{activity.flashcardsMastered}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">{formatDate(activity.date)}</p>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8">
+                        <p className="text-gray-500">No activity recorded yet</p>
+                        <p className="text-gray-400 text-sm mt-2">Complete quizzes and flashcards to see your progress</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            )}
+            </div>
           </>
         )}
       </motion.div>
+      
+      {/* Custom scrollbar styles */}
+      <style jsx>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+      `}</style>
     </div>
   );
 };

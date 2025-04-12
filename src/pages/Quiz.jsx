@@ -5,6 +5,7 @@ import QuizCard from "../components/QuizCard";
 import { useAuth } from "../context/AuthContext";
 import { updateUserProgress, getLearningPaths } from "../config/database";
 import { AiOutlineLeft, AiOutlineRight } from "react-icons/ai";
+import { useParams, useLocation } from "react-router-dom";
 
 const Quiz = () => {
   const [topic, setTopic] = useState("");
@@ -18,7 +19,18 @@ const Quiz = () => {
   const [loading, setLoading] = useState(false);
   const [paths, setPaths] = useState([]);
   const [selectedPathId, setSelectedPathId] = useState("");
+  const [selectedPath, setSelectedPath] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [selectedModule, setSelectedModule] = useState(""); // "" instead of "all"
+  const [quizContent, setQuizContent] = useState("");
   const { user } = useAuth();
+
+
+  // Get parameters from URL if they exist
+  const { pathId } = useParams();
+  const location = useLocation();
+  const queryParams = new URLSearchParams(location.search);
+  const moduleIndex = queryParams.get('module');
 
   useEffect(() => {
     if (user) {
@@ -26,18 +38,253 @@ const Quiz = () => {
     }
   }, [user]);
 
+  // Handle URL parameters for direct quiz generation
+  useEffect(() => {
+    if (pathId && paths.length > 0) {
+      setSelectedPathId(pathId);
+      const path = paths.find(p => p.$id === pathId);
+      if (path) {
+        handlePathChange(path);
+
+        // If module is specified, select it
+        if (moduleIndex !== null) {
+          const moduleIdx = parseInt(moduleIndex);
+          if (!isNaN(moduleIdx) && moduleIdx >= 0 &&
+            path.modules && path.modules.length > moduleIdx) {
+            // Make sure we have valid data before accessing
+            if (path.modules[moduleIdx]) {
+              setSelectedModule(moduleIdx.toString());
+
+              // Extract the actual module content for the topic
+              const module = path.modules[moduleIdx];
+              // Use the exact module title as the quiz topic (without any "Module X:" prefix)
+              const moduleTitle = module.title || `Module ${moduleIdx + 1}`;
+              const cleanTitle = moduleTitle.replace(/^Module\s+\d+\s*:\s*/i, '');
+
+              // Set the clean title as topic
+              setTopic(cleanTitle || path.careerName || 'Learning Path');
+            }
+          }
+        }
+      }
+    }
+  }, [pathId, moduleIndex, paths]);
+
   const fetchPaths = async () => {
     try {
+      setLoading(true);
       const response = await getLearningPaths(user.$id);
+      console.log("Fetched paths:", response);
+
       if (response.documents.length > 0) {
-        setPaths(response.documents);
-        setSelectedPathId(response.documents[0].$id); // Default to first path
+        const validatedPaths = response.documents.map((path) => {
+          let modules = [];
+
+          try {
+            if (Array.isArray(path.modules)) {
+              modules = path.modules;
+            } else if (typeof path.modules === "string") {
+              modules = JSON.parse(path.modules);
+            }
+
+            modules = modules.map((module, idx) => {
+              if (typeof module === "string") {
+                const match = module.match(/Module\s*\d+\s*:\s*(.+)/i);
+                const cleanTitle = match ? match[1].trim() : module.trim();
+                return {
+                  title: cleanTitle,
+                  description: `Learn more about ${cleanTitle}`,
+                  estimatedTime: "20–30 minutes",
+                  content: `This module introduces ${cleanTitle}`
+                };
+              } else {
+                return {
+                  ...module,
+                  title: module.title || `Module ${idx + 1}`
+                };
+              }
+            });
+          } catch (e) {
+            console.error("Error parsing modules for path:", path.careerName, e);
+            modules = [];
+          }
+
+          return {
+            ...path,
+            modules,
+            careerName: path.careerName || "Unnamed Path"
+          };
+        });
+
+        setPaths(validatedPaths);
+
+        if (!pathId && validatedPaths.length > 0) {
+          setSelectedPathId(validatedPaths[0].$id);
+          handlePathChange(validatedPaths[0]);
+        }
       }
+
+      setLoading(false);
     } catch (error) {
       console.error("Error fetching paths:", error);
+      setLoading(false);
     }
   };
 
+  const handlePathChange = (path) => {
+    if (!path) return;
+
+    setSelectedPath(path);
+
+    let parsedModules = [];
+    try {
+      if (Array.isArray(path.modules)) {
+        parsedModules = path.modules;
+      } else if (typeof path.modules === "string") {
+        parsedModules = JSON.parse(path.modules);
+      }
+
+      parsedModules = parsedModules.map((mod, index) => {
+        if (typeof mod === "string") {
+          const titleMatch = mod.match(/Module\s*\d+\s*:\s*(.+)/i);
+          const title = titleMatch ? titleMatch[1].trim() : mod.trim();
+          return { title };
+        }
+        return {
+          ...mod,
+          title: mod.title || `Module ${index + 1}`,
+        };
+      });
+
+      setModules(parsedModules);
+      setSelectedModule(""); // Reset on path change
+      setTopic(""); // Clear topic until module selected
+
+      const allContent = parsedModules.map((module) => {
+        const moduleTitle = module.title || "Unnamed Module";
+        let content = `${moduleTitle}:\n${module.description || ""}`;
+
+        if (Array.isArray(module.sections)) {
+          content +=
+            "\n" +
+            module.sections
+              .map((s) => `${s?.title || ""}: ${s?.content || ""}`)
+              .filter(Boolean)
+              .join("\n\n");
+        } else if (Array.isArray(module.lessons)) {
+          content +=
+            "\n" +
+            module.lessons
+              .map((l) => `${l?.title || ""}: ${l?.content || ""}`)
+              .filter(Boolean)
+              .join("\n\n");
+        } else if (module.content) {
+          content += "\n" + module.content;
+        }
+
+        return content;
+      }).join("\n\n");
+
+      setQuizContent(allContent);
+    } catch (err) {
+      console.error("Error parsing modules", err);
+      setModules([]);
+      setQuizContent("");
+      setTopic("");
+    }
+  };
+
+  const handleModuleChange = (e) => {
+    const value = e.target.value;
+    setSelectedModule(value);
+
+    if (!selectedPath || !modules.length) return;
+
+    if (value === "") {
+      setTopic(""); // reset topic
+      return;
+    }
+
+    try {
+      const index = parseInt(value);
+      const module = modules[index];
+      if (!module) return;
+
+      const rawTitle = module.title || `Module ${index + 1}`;
+      const cleanTitle = rawTitle.replace(/^Module\s+\d+\s*:\s*/i, "");
+
+      setTopic(cleanTitle); // ✅ show just the topic, not whole module title
+
+      // Optionally update quiz content as well
+      let content = `${cleanTitle}:\n${module.description || ""}`;
+      if (Array.isArray(module.sections)) {
+        content +=
+          "\n" +
+          module.sections
+            .map((s) => `${s?.title || ""}: ${s?.content || ""}`)
+            .filter(Boolean)
+            .join("\n\n");
+      } else if (Array.isArray(module.lessons)) {
+        content +=
+          "\n" +
+          module.lessons
+            .map((l) => `${l?.title || ""}: ${l?.content || ""}`)
+            .filter(Boolean)
+            .join("\n\n");
+      } else if (module.content) {
+        content += "\n" + module.content;
+      }
+
+      setQuizContent(content);
+    } catch (err) {
+      console.error("Failed to process module selection:", err);
+      setTopic("");
+    }
+  };
+
+
+  const handlePathSelect = (e) => {
+    const pathId = e.target.value;
+    setSelectedPathId(pathId);
+
+    // Find the selected path object
+    const path = paths.find(p => p.$id === pathId);
+    if (path) {
+      handlePathChange(path);
+    } else {
+      setSelectedPath(null);
+      setModules([]);
+      setQuizContent("");
+    }
+
+    // Reset module selection
+    setSelectedModule("all");
+  };
+
+  const extractModuleContent = (module) => {
+    if (!module) return "";
+
+    let content = [];
+
+    if (module.title) content.push(`${module.title}`);
+    if (module.description) content.push(`${module.description}`);
+
+    if (Array.isArray(module.sections)) {
+      module.sections.forEach((section) => {
+        if (section?.title) content.push(section.title);
+        if (section?.content) content.push(section.content);
+      });
+    } else if (Array.isArray(module.lessons)) {
+      module.lessons.forEach((lesson) => {
+        if (lesson?.title) content.push(lesson.title);
+        if (lesson?.content) content.push(lesson.content);
+      });
+    } else if (module.content) {
+      content.push(module.content);
+    }
+
+    return content.join("\n\n");
+  };
   const handleGenerateQuiz = async () => {
     if (!topic || numQuestions < 1) {
       alert("Please enter a valid topic and number of questions.");
@@ -50,14 +297,54 @@ const Quiz = () => {
     }
 
     setLoading(true);
-    const data = await generateQuizData(topic, numQuestions);
-    setQuizData(data);
-    setUserAnswers({});
-    setShowResults(false);
-    setScore(0);
-    setAccuracy(0);
-    setCurrentIndex(0);
-    setLoading(false);
+    try {
+      // Use the module title directly as the quiz topic
+      let quizTopic = topic;
+
+      // Ensure the topic isn't too generic
+      if (quizTopic.match(/^(module|section|lesson|chapter)\s+\d+$/i)) {
+        // If it's just "Module X", add the path name for context
+        quizTopic = `${selectedPath?.careerName || 'Learning'}: ${quizTopic}`;
+      }
+
+      // Ensure there is enough content to generate a quiz
+      let enhancedContent = quizContent;
+
+      // If selected specific module, focus only on that module's content
+      if (selectedModule !== "all" && modules.length > 0) {
+        const moduleIndex = parseInt(selectedModule);
+        if (!isNaN(moduleIndex) && moduleIndex >= 0 && moduleIndex < modules.length) {
+          const module = modules[moduleIndex];
+          // Add introduction to specify what the quiz should focus on
+          enhancedContent = `This quiz should focus specifically on ${quizTopic}.\n\n${enhancedContent}`;
+        }
+      }
+
+      if (!enhancedContent || enhancedContent.trim().length < 50) {
+        // If module content is too short, add path name and module titles for context
+        enhancedContent = `${selectedPath?.careerName || 'Learning Path'}\n\n` +
+          modules.map(m => {
+            const cleanTitle = (m.title || '').replace(/^Module\s+\d+\s*:\s*/i, '');
+            return `${cleanTitle}: ${m.description || ''}`;
+          }).join('\n\n');
+      }
+
+      console.log("Generating quiz about:", quizTopic);
+
+      // Generate quiz using the content from the selected module/path
+      const data = await generateQuizData(quizTopic, numQuestions, enhancedContent);
+      setQuizData(data);
+      setUserAnswers({});
+      setShowResults(false);
+      setScore(0);
+      setAccuracy(0);
+      setCurrentIndex(0);
+    } catch (error) {
+      console.error("Error generating quiz:", error);
+      alert("Failed to generate quiz. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAnswerSelect = (answer) => {
@@ -146,7 +433,7 @@ const Quiz = () => {
           animate={{ opacity: 1, y: 0 }}
         >
           <h1 className="text-2xl sm:text-3xl font-bold mb-6 bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent">
-            AI-Powered Quiz
+            AI-Powered Learning Path Quiz
           </h1>
           <div className="space-y-4">
             {paths.length > 0 ? (
@@ -156,7 +443,7 @@ const Quiz = () => {
                 </label>
                 <select
                   value={selectedPathId}
-                  onChange={(e) => setSelectedPathId(e.target.value)}
+                  onChange={handlePathSelect}
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                 >
                   <option value="">-- Select Learning Path --</option>
@@ -174,18 +461,48 @@ const Quiz = () => {
                 </p>
               </div>
             )}
-            <div>
+
+            {/* Module Selector */}
+            {modules.length > 0 && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Module
+                </label>
+                <select
+                  value={selectedModule}
+                  onChange={handleModuleChange}
+                  className="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                >
+                  <option value="">-- Select Module --</option>
+                  {modules.map((module, index) => (
+                    <option key={index} value={index}>
+                      Module {index + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Quiz Topic */}
+            <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Quiz Topic
               </label>
               <input
                 type="text"
                 value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
-                placeholder="e.g., JavaScript Fundamentals, World History"
+                readOnly
+                className="w-full px-4 py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
+                placeholder={
+                  !selectedModule
+                    ? "Select a module to load topic"
+                    : "Auto-filled from selected module"
+                }
               />
             </div>
+
+
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Number of Questions
@@ -202,11 +519,10 @@ const Quiz = () => {
             <motion.button
               onClick={handleGenerateQuiz}
               disabled={!selectedPathId || !topic}
-              className={`w-full py-3 ${
-                !selectedPathId || !topic
-                  ? "bg-gray-300 cursor-not-allowed"
-                  : "bg-gradient-to-r from-blue-600 to-blue-500 text-white"
-              } rounded-xl font-medium shadow-lg text-sm sm:text-base`}
+              className={`w-full py-3 ${!selectedPathId || !topic
+                ? "bg-gray-300 cursor-not-allowed"
+                : "bg-gradient-to-r from-blue-600 to-blue-500 text-white"
+                } rounded-xl font-medium shadow-lg text-sm sm:text-base`}
               whileHover={{ scale: selectedPathId && topic ? 1.02 : 1 }}
               whileTap={{ scale: selectedPathId && topic ? 0.98 : 1 }}
             >
@@ -252,11 +568,10 @@ const Quiz = () => {
           <div className="flex justify-between mt-6">
             <motion.button
               onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))}
-              className={`flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full ${
-                currentIndex === 0
-                  ? "bg-blue-300 text-white cursor-not-allowed"
-                  : "bg-blue-400 text-white"
-              }`}
+              className={`flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full ${currentIndex === 0
+                ? "bg-blue-300 text-white cursor-not-allowed"
+                : "bg-blue-400 text-white"
+                }`}
               disabled={currentIndex === 0}
               whileHover={{ scale: currentIndex === 0 ? 1 : 1.1 }}
               whileTap={{ scale: 0.9 }}
@@ -271,11 +586,10 @@ const Quiz = () => {
                   Math.min(prev + 1, quizData.questions.length - 1)
                 )
               }
-              className={`flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full ${
-                currentIndex === quizData.questions.length - 1
-                  ? "bg-blue-300 text-white cursor-not-allowed"
-                  : "bg-blue-400 text-white"
-              }`}
+              className={`flex h-10 w-10 sm:h-14 sm:w-14 items-center justify-center rounded-full ${currentIndex === quizData.questions.length - 1
+                ? "bg-blue-300 text-white cursor-not-allowed"
+                : "bg-blue-400 text-white"
+                }`}
               disabled={currentIndex === quizData.questions.length - 1}
               whileHover={{
                 scale: currentIndex === quizData.questions.length - 1 ? 1 : 1.1,
@@ -343,7 +657,7 @@ const Quiz = () => {
                 question={q.question}
                 answers={q.answers}
                 selectedAnswers={userAnswers[index] || []}
-                onAnswerSelect={() => {}}
+                onAnswerSelect={() => { }}
                 questionType={q.questionType}
                 showResults={true}
                 correctAnswer={q.correctAnswer}

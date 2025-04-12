@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { databases } from "../config/database";
 import { useAuth } from "../context/AuthContext";
-import { RiFireFill, RiBrainLine } from "react-icons/ri";
+import { RiFireFill, RiMagicLine } from "react-icons/ri"; // Changed from RiBrainLine to RiMagicLine for the genie theme
 import { format, differenceInDays, parseISO } from "date-fns";
 import { Query } from "appwrite";
 
@@ -26,11 +26,11 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
         import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID,
         [Query.equal("userID", user.$id)]
       );
-      
+
       // Process all career paths to find quiz scores
       const paths = response.documents || [];
       let quizScores = [];
-      
+
       // Check if any assessments data exists in the career paths
       paths.forEach(path => {
         // If the path has quizScores, add them to our collection
@@ -40,7 +40,7 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
             quizScores = [...quizScores, ...pathQuizzes];
           }
         }
-        
+
         // If there are assessment dates from completed modules
         if (path.completedModules) {
           const completedModules = JSON.parse(path.completedModules || '[]');
@@ -228,12 +228,12 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
           <motion.div
             animate={{ rotate: [0, 10, -10, 0] }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-lg flex items-center justify-center"
+            className="w-8 h-8 bg-gradient-to-tr from-purple-600 to-blue-400 rounded-lg flex items-center justify-center"
           >
-            <RiBrainLine className="text-white text-xl" />
+            <RiMagicLine className="text-white text-xl" /> {/* Genie/Magic icon */}
           </motion.div>
-          <span className="text-xl font-serif md:text-2xl font-bold bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent">
-            pathgenie
+          <span className="text-xl font-serif md:text-2xl font-bold bg-gradient-to-r from-purple-700 to-blue-500 bg-clip-text text-transparent">
+            PathGenie
           </span>
         </motion.div>
       </div>
@@ -304,10 +304,16 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
             onClick={handleLogin}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 hover:bg-blue-700"
+            className="px-5 py-2.5 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 
+             hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 
+             hover:shadow-xl hover:shadow-indigo-500/30 
+             transition-all duration-100 hover:backdrop-blur-sm
+             border border-transparent hover:border-white/30 
+             hover:text-white/90"
           >
             Login
           </motion.button>
+
           <motion.button
             onClick={handleSignup}
             whileHover={{ scale: 1.05 }}

@@ -1,8 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios"; // Make sure axios is installed
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY, {
   apiUrl:
-    "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent",
 });
 
 const MAX_RETRIES = 3;
@@ -118,6 +119,63 @@ const isCodeRelatedTopic = (topic) => {
   );
 };
 
+// Enhanced GROQ API integration with multiple models
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// List of GROQ models in order of preference
+const GROQ_MODELS = [
+  "llama3-70b-8192",    // Primary model - most capable
+  "llama3-8b-8192",     // First fallback - good balance of speed and quality
+  "mixtral-8x7b-32768", // Second fallback - different architecture
+  "gemma-7b-it"         // Third fallback - different model family
+];
+
+// Enhanced wrapper for GROQ API calls with model fallbacks
+const groqCompletion = async (prompt, preferredModel = "llama3-70b-8192") => {
+  // Start with preferred model, then fall back to others if needed
+  const modelsToTry = [
+    preferredModel, 
+    ...GROQ_MODELS.filter(model => model !== preferredModel)
+  ];
+  
+  let lastError = null;
+  
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`Trying GROQ with model: ${modelName}`);
+      
+      const response = await axios.post(
+        GROQ_API_URL,
+        {
+          model: modelName,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,  // Lower temperature for factual responses
+          max_tokens: 4096,
+          top_p: 0.95
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`
+          }
+        }
+      );
+      
+      console.log(`Successfully generated content with GROQ model: ${modelName}`);
+      return response.data.choices[0].message.content;
+    } catch (error) {
+      lastError = error;
+      console.warn(`GROQ model ${modelName} failed:`, error.response?.data?.error?.message || error.message);
+      // Continue to next model
+    }
+  }
+  
+  // If we get here, all GROQ models failed
+  throw new Error(`All GROQ models failed: ${lastError.message}`);
+};
+
+// Updated module content generation function
 export const generateModuleContent = async (moduleName, options = { detailed: false }) => {
   if (!moduleName || typeof moduleName !== "string") {
     throw new Error("Invalid module name provided");
@@ -127,56 +185,103 @@ export const generateModuleContent = async (moduleName, options = { detailed: fa
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const isTechTopic = isCodeRelatedTopic(moduleName);
+      
+      // Enhanced prompt for content generation
+      const prompt = `Generate factual educational content about: "${moduleName}"
 
-      const prompt = `Create educational content for: "${moduleName}"
-      Type: ${isTechTopic ? 'Technical/Programming' : 'General'}
-      Level: ${options.detailed ? 'Advanced' : 'Basic'}
+      IMPORTANT CONSTRAINTS:
+      - ONLY include FACTUAL content that you are CERTAIN about
+      - If you don't know something, provide general, established information instead of specifics
+      - Do NOT include any subjective opinions or unverified information
+      - Focus only on core concepts that are well-established in this field
+      - AVOID mentioning specific products, companies, or people unless absolutely central to the topic
+      - DO NOT reference ANY current events, trends, or statistics
+      - DO NOT reference your capabilities or limitations
 
-      ${isTechTopic ? `Important: EVERY section must include:
-      - Practical code examples with explanations
-      - Working code snippets that demonstrate concepts
-      - Best practices and common patterns
-      - Error handling where relevant` : ''}
-
-      Return a JSON object strictly following this structure:
+      CONTENT TYPE: ${isTechTopic ? 'Technical/Programming' : 'General Education'}
+      LEVEL: ${options.detailed ? 'Advanced' : 'Basic'}
+      
+      CONTENT STRUCTURE:
+      - Begin with fundamental concepts that have remained stable for years
+      - Use factual, precise language without speculation
+      - Focus on explaining core principles and concepts
+      - Include practical examples that illustrate key points
+      - For code examples, use standard syntax and common patterns
+      ${isTechTopic ? '- Include code that follows standard conventions and works correctly' : ''}
+      
+      FORMAT:
+      Return a JSON object with this EXACT structure:
       {
-        "title": "${moduleName}",
+        "title": "Clear title for ${moduleName}",
         "type": "${isTechTopic ? 'technical' : 'general'}",
         "sections": [
           {
-            "title": "Section Title",
-            "content": "Detailed explanation",
-            "keyPoints": ["Key point 1", "Key point 2"],
+            "title": "Core Concept Name",
+            "content": "Factual explanation with concrete examples",
+            "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
             ${isTechTopic ? `"codeExample": {
               "language": "${getAppropriateLanguage(moduleName)}",
-              "code": "// Include working code here\\nfunction example() {\\n  // code implementation\\n}",
-              "explanation": "Explain how the code works"
+              "code": "// Standard, executable code example\\nfunction example() {\\n  // implementation\\n}",
+              "explanation": "Explanation of how the code works"
             }` : '"codeExample": null'}
           }
         ]
-      }`;
-
-      const result = await model.generateContent(prompt);
-      let text = result.response.text();
-      
-      // Enhanced JSON cleaning and parsing
-      text = sanitizeJSON(text);
-      const content = JSON.parse(text);
-
-      if (!validateModuleContent(content)) {
-        throw new Error('Invalid content structure');
       }
+      
+      Create ${options.detailed ? '4' : '3'} focused sections that cover essential aspects of the topic.
+      Keep all content factual and verifiable.
+      
+      ONLY RETURN VALID JSON WITHOUT ANY EXPLANATION OR INTRODUCTION.`;
 
-      // Process and clean content
-      content.sections = content.sections.map(section => ({
-        ...section,
-        content: sanitizeContent(section.content),
-        codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
-      }));
+      // Try all GROQ models first with better error handling
+      try {
+        // Select preferred model based on content type
+        const preferredModel = isTechTopic && options.detailed 
+          ? "llama3-70b-8192"  // Most powerful model for technical content
+          : "llama3-70b-8192"; // Still use 70B for non-technical for consistency
+        
+        const text = await groqCompletion(prompt, preferredModel);
+        const cleanedText = sanitizeJSON(text);
+        const content = JSON.parse(cleanedText);
 
-      return content;
+        if (!validateModuleContent(content)) {
+          throw new Error('Invalid content structure from GROQ');
+        }
+
+        // Process and clean content
+        content.sections = content.sections.map(section => ({
+          ...section,
+          content: sanitizeContent(section.content),
+          codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
+        }));
+
+        return content;
+      } catch (groqError) {
+        console.warn("ALL GROQ models failed, falling back to Gemini:", groqError);
+        
+        // Fall back to Gemini if all GROQ models fail
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(prompt);
+        let text = result.response.text();
+        
+        // Enhanced JSON cleaning and parsing
+        text = sanitizeJSON(text);
+        const content = JSON.parse(text);
+
+        if (!validateModuleContent(content)) {
+          throw new Error('Invalid content structure');
+        }
+
+        // Process and clean content
+        content.sections = content.sections.map(section => ({
+          ...section,
+          content: sanitizeContent(section.content),
+          codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
+        }));
+
+        return content;
+      }
     } catch (error) {
       lastError = error;
       await sleep(RETRY_DELAY);
@@ -259,62 +364,94 @@ export const generateFlashcards = async (topic, numCards = 5) => {
   }
 };
 
-export const generateQuizData = async (topic, numQuestions = 5) => {
-  if (!topic || typeof topic !== "string") {
-    throw new Error("Invalid topic provided");
-  }
-
+export const generateQuizData = async (topic, numQuestions, moduleContent = "") => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-    const prompt = `Generate a quiz on "${topic}" with ${numQuestions} questions.
+    // Check if we have valid content to work with
+    const hasContent = moduleContent && moduleContent.trim().length > 50;
     
-    **Requirements:**
-    - Each question should be **clear and well-structured**.
-    - Include **single-choice and multiple-choice** questions randomly.
-    - Provide **4 answer options** for each question.
-    - Clearly indicate the **correct answer(s)**.
-    - Give a **short explanation** for the correct answer.
-    - Assign **points (default: 10 per question)**.
-    - Format the response as a **JSON array**:
-
-    [
-      {
-        "question": "Example question?",
-        "questionType": "single",
-        "answers": ["Option A", "Option B", "Option C", "Option D"],
-        "correctAnswer": "Option A",
-        "explanation": "Short explanation here.",
-        "point": 10
-      },
-      {
-        "question": "Another example?",
-        "questionType": "multiple",
-        "answers": ["Option A", "Option B", "Option C", "Option D"],
-        "correctAnswer": ["Option B", "Option C"],
-        "explanation": "Short explanation here.",
-        "point": 10
+    // Extract the topic title from formats like "Module 1: Introduction to React"
+    let cleanTopic = topic;
+    if (topic.includes(":")) {
+      cleanTopic = topic.split(":")[1].trim();
+    } else if (topic.match(/Module\s+\d+/i)) {
+      // If topic only contains "Module X", extract from moduleContent
+      if (hasContent) {
+        const firstLine = moduleContent.split('\n')[0];
+        if (firstLine && firstLine.includes(':')) {
+          cleanTopic = firstLine.split(':')[1].trim();
+        }
       }
-    ]`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    try {
-      const cleanText = sanitizeJSON(text);
-      const quizData = JSON.parse(cleanText);
-
-      if (!Array.isArray(quizData) || quizData.length !== numQuestions) {
-        throw new Error("Invalid quiz format");
-      }
-
-      return { nrOfQuestions: numQuestions.toString(), questions: quizData };
-    } catch (error) {
-      console.error("Quiz parsing error:", error);
-      return { nrOfQuestions: "0", questions: [] };
     }
+    
+    const result = await genAI.generateContent(`
+      Create a quiz about "${cleanTopic}" with exactly ${numQuestions} questions.
+      ${hasContent ? "Use the following content to create relevant questions:\n" + moduleContent.substring(0, 5000) : ""}
+      
+      Each question should be directly relevant to the topic "${cleanTopic}" and ${hasContent ? "based on the provided content." : "a typical course on this subject."}
+      
+      Each question should have:
+      - A clear and challenging question
+      - 4 answer options (A, B, C, D)
+      - The correct answer(s)
+      - A brief explanation of why the answer is correct
+      - A point value (10 points by default)
+      - A question type (either "single" for single-choice or "multiple" for multiple-choice)
+
+      Return the quiz in this exact JSON format:
+      {
+        "topic": "${cleanTopic}",
+        "questions": [
+          {
+            "question": "Question text goes here?",
+            "answers": ["Answer A", "Answer B", "Answer C", "Answer D"],
+            "correctAnswer": ["Answer A"], 
+            "explanation": "Explanation of correct answer",
+            "point": 10,
+            "questionType": "single"
+          },
+          ...more questions...
+        ]
+      }
+      
+      For multiple-choice questions where more than one answer is correct, use the format:
+      "correctAnswer": ["Answer A", "Answer C"]
+      and set questionType to "multiple".
+      
+      Make sure all JSON is valid and question counts match exactly ${numQuestions}.
+      If you cannot generate content on this specific topic, focus on generating questions about ${cleanTopic.split(' ').slice(0, 3).join(' ')}.
+    `);
+
+    const resultText = result.response.text();
+    
+    // Extract JSON from the response
+    const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Invalid response format");
+    }
+
+    const quizData = JSON.parse(jsonMatch[0]);
+    
+    // Ensure the topic is properly set in the response
+    if (!quizData.topic || quizData.topic === "${topic}" || quizData.topic === cleanTopic) {
+      quizData.topic = topic; // Use original topic for display purposes
+    }
+    
+    return quizData;
   } catch (error) {
-    throw new Error(`Failed to generate quiz: ${error.message}`);
+    console.error("Error generating quiz:", error);
+    
+    // Create a fallback quiz with the original topic
+    return {
+      topic: topic,
+      questions: Array.from({ length: numQuestions }, (_, i) => ({
+        question: `Question ${i + 1} about ${topic}?`,
+        answers: ["Option A", "Option B", "Option C", "Option D"],
+        correctAnswer: ["Option A"],
+        explanation: `This is the correct answer for question ${i + 1} about ${topic}.`,
+        point: 10,
+        questionType: "single"
+      }))
+    };
   }
 };
 
@@ -613,4 +750,145 @@ export const generateLearningPath = async (goal, options = { type: 'topic', deta
       ];
     }
   }
+};
+
+export const generatePersonalizedCareerPaths = async (userData) => {
+  if (!userData || typeof userData !== "object") {
+    throw new Error("Invalid user data provided");
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    
+    const prompt = `
+    Create 4 highly personalized career/learning paths for a user with the following profile:
+    
+    Name: ${userData.name || 'Anonymous'}
+    Age: ${userData.age || 'Unknown'}
+    Career Goal: "${userData.careerGoal || 'Improve technical skills'}"
+    Current Skills: ${JSON.stringify(userData.skills || [])}
+    Interests: ${JSON.stringify(userData.interests || [])}
+    
+    For each career path:
+    1. Give it a specific, personalized name that aligns with their career goal and interests
+    2. Create between 5-8 modules (fewer for simpler topics, more for complex ones)
+    3. Make each module build logically on the previous ones
+    4. Tailor the content to leverage their existing skills and knowledge
+    5. Each career path should have a clear end goal that helps them progress toward their stated career objective
+    
+    Return EXACTLY 4 career paths in this JSON format:
+    [
+      {
+        "pathName": "Personalized path name based on their profile",
+        "description": "A brief description of this career path and how it helps them achieve their goal",
+        "difficulty": "beginner|intermediate|advanced",
+        "estimatedTimeToComplete": "X months",
+        "relevanceScore": 95, // How relevant this path is to their profile (0-100)
+        "modules": [
+          {
+            "title": "Module 1: Module Title",
+            "description": "Brief description of what this module covers",
+            "estimatedHours": 8, // Vary based on topic complexity
+            "keySkills": ["skill1", "skill2"]
+          },
+          // More modules...
+        ]
+      },
+      // 3 more paths...
+    ]
+    
+    Make sure the career paths are varied but all relevant to their profile. Paths should leverage their existing skills but push them toward their stated career goal. Module count should vary based on topic complexity.
+    `;
+
+    const result = await retry(() => model.generateContent(prompt));
+    const text = result.response.text();
+    
+    try {
+      const cleanText = sanitizeJSON(text);
+      const careerPaths = JSON.parse(cleanText);
+      
+      if (!Array.isArray(careerPaths) || careerPaths.length !== 4) {
+        throw new Error("Invalid career paths format");
+      }
+      
+      // Validate and clean up each career path
+      return careerPaths.map(path => ({
+        pathName: path.pathName || "Career Path",
+        description: path.description || `A learning path toward ${userData.careerGoal}`,
+        difficulty: ["beginner", "intermediate", "advanced"].includes(path.difficulty) ? 
+          path.difficulty : "intermediate",
+        estimatedTimeToComplete: path.estimatedTimeToComplete || "3 months",
+        relevanceScore: typeof path.relevanceScore === 'number' ? 
+          Math.max(0, Math.min(100, path.relevanceScore)) : 85,
+        modules: Array.isArray(path.modules) ? 
+          path.modules.map((module, idx) => ({
+            title: module.title || `Module ${idx + 1}`,
+            description: module.description || "Learn important skills in this area",
+            estimatedHours: typeof module.estimatedHours === 'number' ? module.estimatedHours : 8,
+            keySkills: Array.isArray(module.keySkills) ? module.keySkills : []
+          })) : 
+          generateDefaultModules(path.pathName || "Career Path", 5)
+      }));
+    } catch (error) {
+      console.error("Career path parsing error:", error);
+      
+      // Generate fallback career paths
+      return generateFallbackCareerPaths(userData);
+    }
+  } catch (error) {
+    console.error("Error generating personalized career paths:", error);
+    throw error;
+  }
+};
+
+// Helper function to generate default modules for fallback
+const generateDefaultModules = (pathName, count) => {
+  return Array.from({ length: count }, (_, i) => ({
+    title: `Module ${i + 1}: ${pathName} Fundamentals ${i + 1}`,
+    description: `Learn essential concepts and skills related to ${pathName}`,
+    estimatedHours: 8,
+    keySkills: []
+  }));
+};
+
+// Generate fallback career paths if the API fails
+const generateFallbackCareerPaths = (userData) => {
+  const goal = userData.careerGoal || "tech career";
+  const interests = userData.interests || ["programming", "technology"];
+  const skills = userData.skills || ["basic coding"];
+  
+  return [
+    {
+      pathName: `${goal} Fundamentals`,
+      description: `Master the core concepts needed for a successful career in ${goal}`,
+      difficulty: "beginner",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 90,
+      modules: generateDefaultModules(`${goal} Fundamentals`, 5)
+    },
+    {
+      pathName: `Advanced ${interests[0] || "Tech"} Specialization`,
+      description: `Deepen your knowledge in ${interests[0] || "technology"} to stand out in your career`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "4 months",
+      relevanceScore: 85,
+      modules: generateDefaultModules(`${interests[0] || "Tech"} Specialization`, 6)
+    },
+    {
+      pathName: `${skills[0] || "Coding"} Mastery`,
+      description: `Build upon your existing ${skills[0] || "coding"} skills to reach expert level`,
+      difficulty: "advanced",
+      estimatedTimeToComplete: "5 months",
+      relevanceScore: 80,
+      modules: generateDefaultModules(`${skills[0] || "Coding"} Mastery`, 7)
+    },
+    {
+      pathName: `Practical ${goal} Projects`,
+      description: `Apply your knowledge through hands-on projects relevant to ${goal}`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 88,
+      modules: generateDefaultModules(`${goal} Projects`, 5)
+    }
+  ];
 };
