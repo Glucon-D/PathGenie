@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { databases } from "../config/database";
 import { useAuth } from "../context/AuthContext";
-import { RiFireFill, RiBrainLine } from "react-icons/ri";
+import { RiFireFill, RiMagicLine } from "react-icons/ri"; // Changed from RiBrainLine to RiMagicLine for the genie theme
 import { format, differenceInDays, parseISO } from "date-fns";
 import { Query } from "appwrite";
 
@@ -228,12 +228,12 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
           <motion.div
             animate={{ rotate: [0, 10, -10, 0] }}
             transition={{ duration: 2, repeat: Infinity }}
-            className="w-8 h-8 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-lg flex items-center justify-center"
+            className="w-8 h-8 bg-gradient-to-tr from-purple-600 to-blue-400 rounded-lg flex items-center justify-center"
           >
-            <RiBrainLine className="text-white text-xl" />
+            <RiMagicLine className="text-white text-xl" /> {/* Genie/Magic icon */}
           </motion.div>
-          <span className="text-xl font-serif md:text-2xl font-bold bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent">
-            pathgenie
+          <span className="text-xl font-serif md:text-2xl font-bold bg-gradient-to-r from-purple-700 to-blue-500 bg-clip-text text-transparent">
+            PathGenie
           </span>
         </motion.div>
       </div>
