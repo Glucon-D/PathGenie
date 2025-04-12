@@ -93,17 +93,48 @@ const ModuleDetails = () => {
         pathId
       );
 
+      console.log("Raw path document:", response); // Debug log
+
       // Parse the modules array from the response
-      const modules = JSON.parse(response.modules);
-      const moduleTitle = modules[parseInt(moduleIndex, 10)];
+      let modules;
+      try {
+        modules = JSON.parse(response.modules || "[]");
+        console.log("Parsed modules:", modules); // Debug log
+      } catch (err) {
+        console.error("Error parsing modules JSON:", err);
+        setError("Could not parse modules data");
+        setContentError(true);
+        setLoading(false);
+        setIsLoadingMore(false);
+        return;
+      }
+
+      const moduleIndex_num = parseInt(moduleIndex, 10);
+      
+      if (!modules || moduleIndex_num >= modules.length) {
+        setError("Module not found");
+        setContentError(true);
+        setLoading(false);
+        setIsLoadingMore(false);
+        return;
+      }
+      
+      // Check if modules are strings or objects
+      let moduleTitle;
+      if (typeof modules[moduleIndex_num] === 'string') {
+        moduleTitle = modules[moduleIndex_num].split(':').pop().trim();
+      } else if (typeof modules[moduleIndex_num] === 'object' && modules[moduleIndex_num].title) {
+        moduleTitle = modules[moduleIndex_num].title;
+      } else {
+        moduleTitle = `Module ${moduleIndex_num + 1}`;
+      }
       
       setModuleName(moduleTitle);
+      console.log("Module title to generate content for:", moduleTitle); // Debug log
       
       // Determine if it's a tech/code-related topic
       const isTechTopic = isCodeRelatedTopic(moduleTitle);
       
-      console.log("Loading content for module:", moduleTitle);
-
       if (expanded) {
         try {
           // Generate detailed content for the module
@@ -143,6 +174,7 @@ const ModuleDetails = () => {
       } else {
         try {
           // Generate basic content for initial load
+          console.log("Generating initial content for:", moduleTitle);
           const initialContent = await generateModuleContent(moduleTitle, {
             detailed: false,
           });
