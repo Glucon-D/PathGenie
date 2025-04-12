@@ -169,22 +169,40 @@ const ProfileForm = () => {
         }
         
         // Ensure module titles are proper topics, not just numbered versions of the path
-        const moduleTitles = path.modules.map(m => {
-          // Extract and clean module title
-          let title = m.title;
-          
-          // Remove any numbering like "Path Name 1: " or "1. "
-          title = title.replace(/^\d+[\.:]\s*/, '');
-          title = title.replace(new RegExp(`^${path.pathName}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
-          
-          // If after cleaning, the title is too short or identical to path name,
-          // replace with the topic's actual content description
-          if (title.length < 5 || title === path.pathName) {
-            return m.description?.split('.')[0] || title; // Use first sentence of description
-          }
-          
-          return title;
-        });
+        let moduleTitles = [];
+        try {
+          moduleTitles = path.modules.map(m => {
+            // Extract and clean module title
+            let title = m.title || '';
+            
+            // Remove any numbering like "Path Name 1: " or "1. "
+            title = title.replace(/^\d+[\.:]\s*/, '');
+            // Use a safer regex that won't throw errors
+            try {
+              title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+            } catch (e) {
+              // If regex fails, just keep the title as is
+              console.log('Regex error:', e);
+            }
+            
+            // If after cleaning, the title is too short or identical to path name,
+            // replace with the topic's actual content description
+            if (!title || title.length < 5 || title === path.pathName) {
+              return m.description ? m.description.split('.')[0] : 'Module';
+            }
+            
+            return title;
+          }).filter(title => title && title.trim() !== '');
+        } catch (moduleError) {
+          console.error("Error processing module titles:", moduleError);
+          // Provide a fallback set of module titles
+          moduleTitles = ['Fundamentals', 'Core Concepts', 'Advanced Topics', 'Practical Application'];
+        }
+        
+        // Ensure we have at least some modules
+        if (moduleTitles.length === 0) {
+          moduleTitles = ['Fundamentals', 'Core Concepts', 'Advanced Topics', 'Practical Application'];
+        }
         
         await databases.createDocument(
           DATABASE_ID,
@@ -194,11 +212,11 @@ const ProfileForm = () => {
             userID: userID,                                    
             modules: JSON.stringify(moduleTitles),             
             progress: 0,                                       
-            careerName: path.pathName,                         
+            careerName: path.pathName || "Learning Path",
             completedModules: JSON.stringify([]),              
             recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)), 
             aiNudges: JSON.stringify([]),                      
-            summaryGenerated: false,                           
+            summaryGenerated: false                           
           }
         );
       }
@@ -309,22 +327,40 @@ const ProfileForm = () => {
           }
           
           // Ensure module titles are proper topics, not just numbered versions of the path
-          const moduleTitles = path.modules.map(m => {
-            // Extract and clean module title
-            let title = m.title;
-            
-            // Remove any numbering like "Path Name 1: " or "1. "
-            title = title.replace(/^\d+[\.:]\s*/, '');
-            title = title.replace(new RegExp(`^${path.pathName}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
-            
-            // If after cleaning, the title is too short or identical to path name,
-            // replace with the topic's actual content description
-            if (title.length < 5 || title === path.pathName) {
-              return m.description?.split('.')[0] || title; // Use first sentence of description
-            }
-            
-            return title;
-          });
+          let moduleTitles = [];
+          try {
+            moduleTitles = path.modules.map(m => {
+              // Extract and clean module title
+              let title = m.title || '';
+              
+              // Remove any numbering like "Path Name 1: " or "1. "
+              title = title.replace(/^\d+[\.:]\s*/, '');
+              // Use a safer regex that won't throw errors
+              try {
+                title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+              } catch (e) {
+                // If regex fails, just keep the title as is
+                console.log('Regex error:', e);
+              }
+              
+              // If after cleaning, the title is too short or identical to path name,
+              // replace with the topic's actual content description
+              if (!title || title.length < 5 || title === path.pathName) {
+                return m.description ? m.description.split('.')[0] : 'Module';
+              }
+              
+              return title;
+            }).filter(title => title && title.trim() !== '');
+          } catch (moduleError) {
+            console.error("Error processing module titles:", moduleError);
+            // Provide a fallback set of module titles
+            moduleTitles = ['Fundamentals', 'Core Concepts', 'Advanced Topics', 'Practical Application'];
+          }
+          
+          // Ensure we have at least some modules
+          if (moduleTitles.length === 0) {
+            moduleTitles = ['Fundamentals', 'Core Concepts', 'Advanced Topics', 'Practical Application'];
+          }
           
           await databases.createDocument(
             DATABASE_ID,
@@ -334,11 +370,11 @@ const ProfileForm = () => {
               userID: userID,
               modules: JSON.stringify(moduleTitles),
               progress: 0,
-              careerName: path.pathName,
+              careerName: path.pathName || "Learning Path",
               completedModules: JSON.stringify([]),
               recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
               aiNudges: JSON.stringify([]),
-              summaryGenerated: false,
+              summaryGenerated: false
             }
           );
         }
