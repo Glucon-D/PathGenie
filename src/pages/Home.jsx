@@ -167,78 +167,121 @@ const faqs = [
 const Home = () => {
   const navigate = useNavigate();
 
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.3
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { 
+      opacity: 1, 
+      y: 0,
+      transition: { duration: 0.5 }
+    }
+  };
+
   return (
     <div className="w-full bg-white text-gray-900">
+      {/* Enhanced Hero Section */}
+      <section className="relative w-full bg-gradient-to-br from-blue-100 via-white to-indigo-100 overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+        
+        <div className="relative max-w-7xl mx-auto px-4 py-12 md:py-20 lg:py-28">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-gradient-radial from-blue-400/20 via-transparent to-transparent opacity-50"></div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center relative">
+            <div className="text-center lg:text-left order-2 lg:order-1 z-10">
+              <motion.div 
+                variants={containerVariants}
+                initial="hidden"
+                animate="visible"
+                className="space-y-8"
+              >
+                <motion.div variants={itemVariants}>
+                  <span className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-medium bg-gradient-to-r from-blue-100 to-indigo-100 text-blue-600 border border-blue-200 shadow-sm">
+                    <span className="mr-2">✨</span> Powered by Advanced AI
+                  </span>
+                </motion.div>
 
-      {/* HERO SECTION */}
-      <section className="w-full bg-gradient-to-br from-blue-200 via-white to-blue-200 border border-blue-700 rounded-4xl text-gray-900 grid grid-cols-2">
-        <div className="max-w-5xl mx-auto px-4 py-28 text-center col-span-1">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
-            className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-medium bg-blue-100 text-blue-600 mb-6"
-          >
-            <span className="mr-2">✨</span> Powered by Advanced AI
-          </motion.div>
+                <motion.h1 variants={itemVariants} className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold leading-tight">
+                  <span className="block font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-purple-500 to-blue-600 animate-gradient-x">
+                    Master Skills
+                  </span>
+                  <span className="block mt-2 text-gray-900">With AI Guidance</span>
+                </motion.h1>
 
-          <motion.h1
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="text-5xl sm:text-7xl font-bold leading-tight mb-4"
-          >
-            <span className="block font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-800 via-purple-500 to-blue-800">
-              Master Skills
-            </span>
-            <span className="block mt-2 text-gray-900">With AI Guidance</span>
-          </motion.h1>
+                <motion.p variants={itemVariants} className="max-w-2xl mx-auto lg:mx-0 text-base sm:text-lg lg:text-xl text-gray-600">
+                  Experience the future of learning with personalized AI content, real-time feedback, and hands-on practice.
+                </motion.p>
 
-          <motion.p
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="max-w-2xl mx-auto text-lg sm:text-xl text-gray-600 mb-10"
-          >
-            Experience the future of learning with personalized AI content, real-time feedback, and hands-on practice.
-          </motion.p>
+                <motion.div variants={itemVariants} className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4">
+                  <button
+                    onClick={() => navigate("/signup")}
+                    className="group px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl 
+                    shadow-xl shadow-blue-500/20 hover:shadow-2xl hover:shadow-blue-500/30 
+                    transform hover:-translate-y-1 transition-all duration-200
+                    border border-white/10 backdrop-blur-sm flex items-center justify-center gap-2"
+                  >
+                    Start Learning Free 
+                    <RiArrowRightLine className="group-hover:translate-x-1 transition-transform" />
+                  </button>
+                  <button className="px-8 py-4 bg-white/80 backdrop-blur-sm border border-gray-200 text-gray-700 
+                    font-medium rounded-xl hover:bg-blue-50 hover:border-blue-200 transform hover:-translate-y-1 
+                    transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
+                  >
+                    See How It Works 
+                    <RiPlayCircleLine className="text-blue-600 text-xl group-hover:scale-110 transition-transform" />
+                  </button>
+                </motion.div>
+              </motion.div>
+            </div>
 
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-            className="flex flex-col sm:flex-row justify-center gap-4"
-          >
-            <button
-              onClick={() => navigate("/signup")}
-              className="px-8 py-4 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 
-              hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 
-              hover:shadow-xl hover:shadow-indigo-500/30 transition-all duration-100 
-              hover:backdrop-blur-sm border border-transparent hover:border-white/30 
-              hover:text-white/90 flex items-center justify-center gap-2"
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="order-1 lg:order-2 relative"
             >
-              Start Learning Free <RiArrowRightLine />
-            </button>
-            <button
-              className="px-8 py-4 border border-gray-300 text-gray-700 font-medium rounded-xl hover:bg-blue-50 hover:border-indigo-600 hover:scale-105 transition-all flex items-center justify-center gap-2"
-            >
-              See How It Works <RiPlayCircleLine className="text-blue-600 text-xl" />
-            </button>
-          </motion.div>
-        </div>
-        <div className="p-5">
-          <img className="h-full w-full rounded-4xl" src={IllustrationImage} alt="" />
+              <div className="relative z-10 rounded-3xl overflow-hidden shadow-2xl border border-white/50 backdrop-blur-sm">
+                <img 
+                  className="w-full h-auto transform hover:scale-105 transition-transform duration-700" 
+                  src={IllustrationImage} 
+                  alt="AI Learning Illustration"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent"></div>
+              </div>
+              
+              {/* Decorative elements */}
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-blue-400/20 rounded-full blur-3xl"></div>
+              <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-indigo-400/20 rounded-full blur-3xl"></div>
+            </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* FEATURES SECTION */}
-      <section className="w-full bg-white py-24">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-14">
-            Why Choose Our Platform?
-          </h2>
+      {/* Enhanced Features Section */}
+      <section className="relative w-full bg-gradient-to-b from-white to-gray-50/50 py-20 md:py-32">
+        <div className="max-w-6xl mx-auto px-4">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+              Why Choose Our Platform?
+            </h2>
+          </motion.div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-10">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 lg:gap-10">
             {features.map((feature, index) => (
               <motion.div
                 key={index}
@@ -246,13 +289,13 @@ const Home = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.2 }}
-                className={`rounded-2xl p-8 transition hover:shadow-2xl shadow-md border ${feature.cardBg} ${feature.borderColor}`}
+                className={`rounded-2xl p-6 md:p-8 transition-all hover:shadow-2xl shadow-md border ${feature.cardBg} ${feature.borderColor}`}
               >
-                <div className={`w-14 h-14 flex items-center justify-center rounded-xl mb-6 ${feature.iconBg}`}>
+                <div className={`w-12 h-12 md:w-14 md:h-14 flex items-center justify-center rounded-xl mx-auto mb-5 md:mb-6 ${feature.iconBg}`}>
                   {feature.icon}
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-gray-600 text-sm">{feature.description}</p>
+                <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-2">{feature.title}</h3>
+                <p className="text-gray-600 text-sm md:text-base">{feature.description}</p>
               </motion.div>
             ))}
           </div>
@@ -260,8 +303,8 @@ const Home = () => {
       </section>
 
       {/* STATS SECTION */}
-      <section className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-20">
-        <div className="max-w-6xl mx-auto px-4 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+      <section className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white py-14 md:py-16 lg:py-20 px-4">
+        <div className="max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 text-center">
           {stats.map((stat, index) => (
             <motion.div
               key={index}
@@ -269,25 +312,25 @@ const Home = () => {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.15 }}
+              className="p-3"
             >
-              <div className="text-4xl font-bold">
+              <div className="text-3xl md:text-4xl font-bold">
                 <AnimatedCounter target={stat.number} />
               </div>
-              <div className="text-white/80 text-sm">{stat.label}</div>
+              <div className="text-white/80 text-xs md:text-sm mt-1">{stat.label}</div>
             </motion.div>
           ))}
-
         </div>
       </section>
 
       {/* TESTIMONIALS SECTION */}
-      <section className="bg-gray-50 py-24">
-        <div className="max-w-6xl mx-auto px-4 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-14">
+      <section className="bg-gray-50 py-16 md:py-20 lg:py-24 px-4">
+        <div className="max-w-6xl mx-auto text-center">
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-8 lg:mb-14">
             What Learners Are Saying
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {testimonials.map((t, index) => (
               <motion.div
                 key={index}
@@ -295,16 +338,16 @@ const Home = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.2 }}
-                className="bg-white p-6 rounded-2xl shadow-lg text-left"
+                className="bg-white p-5 md:p-6 rounded-2xl shadow-lg text-left"
               >
-                <div className="flex items-center gap-4 mb-4">
-                  <img src={t.avatar} alt={t.name} className="w-12 h-12 rounded-full" />
+                <div className="flex items-center gap-3 md:gap-4 mb-3 md:mb-4">
+                  <img src={t.avatar} alt={t.name} className="w-10 h-10 md:w-12 md:h-12 rounded-full" />
                   <div>
                     <div className="font-semibold text-gray-800">{t.name}</div>
-                    <div className="text-sm text-gray-500">{t.role}</div>
+                    <div className="text-xs md:text-sm text-gray-500">{t.role}</div>
                   </div>
                 </div>
-                <p className="text-gray-600 text-sm italic">“{t.quote}”</p>
+                <p className="text-gray-600 text-xs md:text-sm italic">"{t.quote}"</p>
               </motion.div>
             ))}
           </div>
@@ -312,13 +355,13 @@ const Home = () => {
       </section>
 
       {/*FAQs section */}
-      <section className="py-24 bg-white">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <h2 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-12">
+      <section className="py-16 md:py-20 lg:py-24 bg-white px-4">
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-2xl md:text-3xl lg:text-4xl font-bold text-gray-900 mb-8 lg:mb-12">
             Frequently Asked Questions
           </h2>
 
-          <div className="space-y-4 text-left">
+          <div className="space-y-3 md:space-y-4 text-left">
             {faqs.map((item, i) => (
               <FaqItem key={i} question={item.q} answer={item.a} />
             ))}
@@ -326,36 +369,58 @@ const Home = () => {
         </div>
       </section>
 
-
       {/*Final CTA banner */}
-      <section className="py-24 bg-gradient-to-br from-blue-200 via-white to-blue-200 border border-blue-700 text-black text-center rounded-4xl">
+      <section className="py-16 md:py-20 lg:py-24 bg-gradient-to-br from-blue-200 via-white to-blue-200 border border-blue-700 text-black text-center rounded-3xl lg:rounded-4xl mx-2 md:mx-4 my-4 md:my-6">
         <div className="max-w-3xl mx-auto px-4">
           <motion.h2
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
-            className="text-3xl sm:text-4xl font-bold mb-4"
+            className="text-2xl md:text-3xl lg:text-4xl font-bold mb-4"
           >
             Ready to Elevate Your Skills with AI?
           </motion.h2>
-          <p className="text-white/90 mb-8 text-lg">
+          <p className="text-gray-700 mb-6 md:mb-8 text-base md:text-lg">
             Join thousands of learners transforming their future through smart, guided learning.
           </p>
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate("/signup")}
-            className="px-8 py-4 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 
+            className="px-6 md:px-8 py-3 md:py-4 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 
               hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 
               hover:shadow-xl hover:shadow-indigo-500/30 transition-all duration-100 
               hover:backdrop-blur-sm border border-transparent hover:border-white/30 
-              hover:text-white/90"
+              hover:text-white/90 w-full sm:w-auto"
           >
             Start Learning Now 🚀
           </motion.button>
         </div>
       </section>
 
+      <style jsx>{`
+        .animate-gradient-x {
+          background-size: 200% 200%;
+          animation: gradient-x 15s ease infinite;
+        }
+        
+        @keyframes gradient-x {
+          0% { background-position: 0% 50% }
+          50% { background-position: 100% 50% }
+          100% { background-position: 0% 50% }
+        }
+        
+        .bg-grid-pattern {
+          background-image: 
+            linear-gradient(to right, #6366f1 1px, transparent 1px),
+            linear-gradient(to bottom, #6366f1 1px, transparent 1px);
+          background-size: 40px 40px;
+        }
+        
+        .bg-gradient-radial {
+          background-image: radial-gradient(circle at center, var(--tw-gradient-from) 0%, var(--tw-gradient-to) 100%);
+        }
+      `}</style>
     </div>
   );
 };
