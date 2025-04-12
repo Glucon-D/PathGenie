@@ -7,6 +7,7 @@ import { account } from "../config/appwrite";
 import { databases } from "../config/database";
 import { ID } from "appwrite";
 import { toast } from "react-hot-toast";
+import { generateLearningPath } from "../config/gemini";
 
 const ProfileForm = () => {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ const ProfileForm = () => {
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const USERS_COLLECTION_ID = import.meta.env.VITE_USERS_COLLECTION_ID;
+  const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
 
   // Animation variants
   const containerVariants = {
@@ -96,6 +98,56 @@ const ProfileForm = () => {
     });
   };
 
+  const generateCareerPaths = async (userID) => {
+    try {
+      // Generate career paths based on user interests and career goal
+      const careerPaths = [];
+
+      // Create a career path for the main career goal
+      const mainCareerModules = await generateLearningPath(formData.careerGoal);
+      careerPaths.push({
+        userID,
+        modules: JSON.stringify(mainCareerModules),
+        progress: 0,
+        careerName: formData.careerGoal,
+        completedModules: JSON.stringify([]),
+        recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+        aiNudges: JSON.stringify([]),
+        summaryGenerated: false
+      });
+
+      // Generate additional career paths based on top interests (max 2)
+      for (const interest of formData.interests.slice(0, 2)) {
+        const interestModules = await generateLearningPath(interest);
+        careerPaths.push({
+          userID,
+          modules: JSON.stringify(interestModules),
+          progress: 0,
+          careerName: interest,
+          completedModules: JSON.stringify([]),
+          recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+          aiNudges: JSON.stringify([]),
+          summaryGenerated: false
+        });
+      }
+
+      // Create career path documents in Appwrite
+      for (const careerPath of careerPaths) {
+        await databases.createDocument(
+          DATABASE_ID,
+          CAREER_PATHS_COLLECTION_ID,
+          ID.unique(),
+          careerPath
+        );
+      }
+
+      return careerPaths.length;
+    } catch (error) {
+      console.error("Error generating career paths:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -122,11 +174,15 @@ const ProfileForm = () => {
         userData
       );
       
+      // Generate career paths based on user profile
+      toast.loading("Creating your personalized career paths...", { duration: 8000 });
+      const pathsCount = await generateCareerPaths(user.$id);
+      
       // Show success message
-      toast.success("Profile created successfully!");
+      toast.success(`Profile created with ${pathsCount} career paths!`);
       
       // Redirect to dashboard
-      navigate("/dashboard");
+      navigate("/learning-path");
     } catch (error) {
       console.error("Error creating user profile:", error);
       toast.error("Failed to create profile. Please try again.");

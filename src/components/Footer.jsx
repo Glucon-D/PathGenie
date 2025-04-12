@@ -14,13 +14,13 @@ import {
 
 const Footer = () => {
   const handleReportBug = () => {
-    window.location.href = "mailto:connect@ayush-sharma.in?subject=Report%20Feedback/Bug%20on%20thinkforge";
+    window.location.href = "mailto:connect@ayush-sharma.in?subject=Report%20Feedback/Bug%20on%20pathgenie";
   };
 
   const socialLinks = [
     { 
       icon: <RiGithubFill className="w-6 h-6" />, 
-      href: 'https://github.com/vrandaagarg/thinkforge',
+      href: 'https://github.com/vrandaagarg/pathgenie',
       label: 'GitHub'
     },
     { 
@@ -43,7 +43,7 @@ const Footer = () => {
             >
               <RiReactjsLine className="text-3xl text-blue-600 animate-spin-slow" />
               <div className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                ThinkForge
+                pathgenie
               </div>
             </motion.div>
             <motion.p 
@@ -54,7 +54,7 @@ const Footer = () => {
             >
               Made with <RiHeartFill className="text-red-500 animate-pulse" /> by
               <a 
-                href="https://thinkforge.ayush-sharma.in" 
+                href="https://pathgenie.ayush-sharma.in" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
@@ -107,7 +107,7 @@ const Footer = () => {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.4 }}
         >
-          © {new Date().getFullYear()} thinkforge. All rights reserved.
+          © {new Date().getFullYear()} pathgenie. All rights reserved.
         </motion.p>
       </div>
     </footer>

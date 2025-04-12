@@ -12,7 +12,7 @@ export const sendPasswordRecovery = async (email) => {
     try {
         await account.createRecovery(
             email,
-            'https://thinkforge.ayush-sharma.in/reset-password'
+            'https://pathgenie.ayush-sharma.in/reset-password'
         );
         return { success: true };
     } catch (error) {

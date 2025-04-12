@@ -42,7 +42,7 @@ const Home = () => {
       name: "Sarah Johnson",
       role: "Software Developer",
       avatar: "https://randomuser.me/api/portraits/women/1.jpg",
-      text: "ThinkForge has revolutionized how I approach learning. The AI-powered recommendations are spot-on!"
+      text: "pathgenie has revolutionized how I approach learning. The AI-powered recommendations are spot-on!"
     },
     {
       name: "Mike Chen",
@@ -238,8 +238,8 @@ const Home = () => {
                 answer: "Our AI technology analyzes your learning patterns and preferences to create personalized learning paths, adapting content difficulty and suggesting relevant topics based on your progress."
               },
               {
-                question: "Is ThinkForge suitable for beginners?",
-                answer: "Absolutely! ThinkForge is designed for learners of all levels. Our AI adapts the content to match your current knowledge and helps you progress at your own pace."
+                question: "Is pathgenie suitable for beginners?",
+                answer: "Absolutely! pathgenie is designed for learners of all levels. Our AI adapts the content to match your current knowledge and helps you progress at your own pace."
               },
               {
                 question: "What types of content are available?",
@@ -247,7 +247,7 @@ const Home = () => {
               },
               {
                 question: "How do you track progress?",
-                answer: "ThinkForge provides detailed analytics, progress tracking, and performance metrics to help you monitor your learning journey and identify areas for improvement."
+                answer: "pathgenie provides detailed analytics, progress tracking, and performance metrics to help you monitor your learning journey and identify areas for improvement."
               },
               {
                 question: "Can I learn at my own pace?",

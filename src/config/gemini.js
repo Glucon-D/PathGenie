@@ -78,50 +78,6 @@ const sanitizeJSON = (text) => {
   }
 };
 
-export const generateLearningPath = async (topic) => {
-  if (!topic || typeof topic !== "string") {
-    throw new Error("Invalid topic provided");
-  }
-
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `Generate a comprehensive learning path for: "${topic}"
-    Requirements:
-    - Create exactly 5 progressive modules
-    - Each module should build upon previous knowledge
-    - Focus on practical, hands-on learning
-    - Include both theoretical and practical aspects
-    
-    Return ONLY a JSON array with exactly 5 strings in this format:
-    ["Module 1: [Clear Title]", "Module 2: [Clear Title]", "Module 3: [Clear Title]", "Module 4: [Clear Title]", "Module 5: [Clear Title]"]
-    `;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    try {
-      const cleanText = sanitizeJSON(text);
-      const modules = JSON.parse(cleanText);
-      if (!Array.isArray(modules) || modules.length !== 5) {
-        throw new Error("Invalid response format");
-      }
-      return modules;
-    } catch (error) {
-      console.error("Parsing error:", error);
-      return [
-        `Module 1: Introduction to ${topic}`,
-        `Module 2: Core Concepts of ${topic}`,
-        `Module 3: Intermediate ${topic} Techniques`,
-        `Module 4: Advanced ${topic} Applications`,
-        `Module 5: Real-world ${topic} Projects`,
-      ];
-    }
-  } catch (error) {
-    throw new Error(`Failed to generate learning path: ${error.message}`);
-  }
-};
-
 const isCodeRelatedTopic = (topic) => {
   const techKeywords = {
     programming: ['javascript', 'python', 'java', 'coding', 'programming', 'typescript'],
@@ -356,5 +312,280 @@ export const generateChatResponse = async (message, context) => {
   } catch (error) {
     console.error('Chat generation error:', error);
     throw new Error('Failed to generate response');
+  }
+};
+
+export const generateQuiz = async (moduleName, numQuestions = 5) => {
+  if (!moduleName || typeof moduleName !== "string") {
+    throw new Error("Invalid module name provided");
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+    const prompt = `Generate a 5-question quiz for the topic: "${moduleName}" with 4 options each and the correct answer marked.
+    
+    **Requirements:**
+    - Each question should test understanding of ${moduleName} concepts
+    - Include a mix of difficulty levels (basic to advanced)
+    - Provide 4 answer options for each question (a, b, c, d format)
+    - Clearly mark the correct answer
+    - Format as a JSON object:
+
+    {
+      "questions": [
+        {
+          "question": "Question text here?",
+          "options": ["Option A", "Option B", "Option C", "Option D"],
+          "correctIndex": 0,
+          "explanation": "Brief explanation of why this is correct"
+        },
+        // 4 more questions following the same format
+      ]
+    }`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    try {
+      const cleanText = sanitizeJSON(text);
+      const quizData = JSON.parse(cleanText);
+      
+      if (!quizData.questions || !Array.isArray(quizData.questions) || quizData.questions.length === 0) {
+        throw new Error("Invalid quiz format");
+      }
+
+      return quizData;
+    } catch (error) {
+      console.error("Quiz parsing error:", error);
+      // Fallback quiz if parsing fails
+      return {
+        questions: [
+          {
+            question: `What is the main focus of ${moduleName}?`,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex: 0,
+            explanation: "This is the correct answer based on the module content."
+          },
+          {
+            question: `Which of these is NOT related to ${moduleName}?`,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex: 1,
+            explanation: "This option is unrelated to the topic."
+          },
+          {
+            question: `What is a key principle in ${moduleName}?`,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex: 2,
+            explanation: "This principle is fundamental to understanding the topic."
+          },
+          {
+            question: `How does ${moduleName} apply to real-world scenarios?`,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex: 3,
+            explanation: "This reflects the practical application of the concept."
+          },
+          {
+            question: `What advanced technique is associated with ${moduleName}?`,
+            options: ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex: 0,
+            explanation: "This is an advanced technique in this field."
+          }
+        ]
+      };
+    }
+  } catch (error) {
+    throw new Error(`Failed to generate quiz: ${error.message}`);
+  }
+};
+
+// Helper function to retry API calls
+const retry = async (fn, retries = MAX_RETRIES, delay = RETRY_DELAY) => {
+  try {
+    return await fn();
+  } catch (error) {
+    if (retries > 0) {
+      console.log(`Retrying... Attempts left: ${retries - 1}`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return retry(fn, retries - 1, delay);
+    }
+    throw error;
+  }
+};
+
+// Consolidated function that handles both topic-based and career-based learning paths
+export const generateLearningPath = async (goal, options = { type: 'topic', detailed: false }) => {
+  if (!goal || typeof goal !== "string") {
+    throw new Error("Invalid goal/topic provided");
+  }
+  
+  // Determine if we're generating a simple topic path or a detailed career path
+  const isCareerPath = options.type === 'career';
+  
+  try {
+    const model = genAI.getGenerativeModel({ 
+      model: isCareerPath ? "gemini-1.5-pro" : "gemini-1.5-flash" 
+    });
+
+    let prompt;
+    
+    if (isCareerPath) {
+      prompt = `Create a structured learning path for someone who wants to learn about "${goal}". 
+      Design a series of modules (between 5-7) that progressively build knowledge from basics to advanced concepts.
+      
+      Return the result as a JSON array with this structure:
+      [
+        {
+          "title": "Module title",
+          "description": "Brief description of what will be covered in this module",
+          "estimatedTime": "Estimated time to complete (e.g., '2-3 hours')",
+          "content": "Detailed content overview with key points to learn"
+        }
+      ]
+      
+      Make sure the content is comprehensive, accurate, and follows a logical progression from fundamentals to more complex topics.`;
+    } else {
+      prompt = `Generate a comprehensive learning path for: "${goal}"
+      Requirements:
+      - Create exactly 5 progressive modules
+      - Each module should build upon previous knowledge
+      - Focus on practical, hands-on learning
+      - Include both theoretical and practical aspects
+      
+      Return ONLY a JSON array with exactly 5 strings in this format:
+      ["Module 1: [Clear Title]", "Module 2: [Clear Title]", "Module 3: [Clear Title]", "Module 4: [Clear Title]", "Module 5: [Clear Title]"]
+      `;
+    }
+
+    const result = await (isCareerPath ? 
+      retry(() => model.generateContent(prompt)) : 
+      model.generateContent(prompt));
+      
+    const text = isCareerPath ? result.response.text() : result.response.text();
+
+    try {
+      // Extract JSON from the response
+      const cleanText = sanitizeJSON(text);
+      
+      if (isCareerPath) {
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const jsonString = jsonMatch[0];
+          const modulesData = JSON.parse(jsonString);
+          
+          // Validate and clean the data
+          const cleanedModules = modulesData.map(module => ({
+            title: module.title || `Learning ${goal}`,
+            description: module.description || `Learn about ${goal}`,
+            estimatedTime: module.estimatedTime || "1-2 hours",
+            content: module.content || `This module will teach you about ${goal}`
+          }));
+          
+          return cleanedModules;
+        } else {
+          throw new Error("Failed to parse JSON");
+        }
+      } else {
+        const modules = JSON.parse(cleanText);
+        if (!Array.isArray(modules) || modules.length !== 5) {
+          throw new Error("Invalid response format");
+        }
+        return modules;
+      }
+    } catch (error) {
+      console.error("Parsing error:", error);
+      
+      if (isCareerPath) {
+        // Return a fallback career learning path
+        return [
+          {
+            title: `Introduction to ${goal}`,
+            description: `Learn the fundamentals of ${goal}`,
+            estimatedTime: "1-2 hours",
+            content: `This module introduces the basic concepts of ${goal}.`
+          },
+          {
+            title: `${goal} Fundamentals`,
+            description: `Understand the core principles of ${goal}`,
+            estimatedTime: "2-3 hours",
+            content: `Build a solid foundation in ${goal} by mastering the essential concepts.`
+          },
+          {
+            title: `Practical ${goal}`,
+            description: `Apply your knowledge through practical exercises`,
+            estimatedTime: "3-4 hours",
+            content: `Practice makes perfect. In this module, you'll apply your theoretical knowledge.`
+          },
+          {
+            title: `Advanced ${goal}`,
+            description: `Dive deeper into advanced concepts`,
+            estimatedTime: "3-4 hours",
+            content: `Take your skills to the next level with advanced techniques and methodologies.`
+          },
+          {
+            title: `${goal} in the Real World`,
+            description: `Learn how to apply your skills in real-world scenarios`,
+            estimatedTime: "2-3 hours",
+            content: `Discover how professionals use these skills in industry settings.`
+          }
+        ];
+      } else {
+        // Return a fallback simple learning path
+        return [
+          `Module 1: Introduction to ${goal}`,
+          `Module 2: Core Concepts of ${goal}`,
+          `Module 3: Intermediate ${goal} Techniques`,
+          `Module 4: Advanced ${goal} Applications`,
+          `Module 5: Real-world ${goal} Projects`,
+        ];
+      }
+    }
+  } catch (error) {
+    console.error("Error generating learning path:", error);
+    
+    if (isCareerPath) {
+      // Return a fallback career learning path
+      return [
+        {
+          title: `Introduction to ${goal}`,
+          description: `Learn the fundamentals of ${goal}`,
+          estimatedTime: "1-2 hours",
+          content: `This module introduces the basic concepts of ${goal}.`
+        },
+        {
+          title: `${goal} Fundamentals`,
+          description: `Understand the core principles of ${goal}`,
+          estimatedTime: "2-3 hours",
+          content: `Build a solid foundation in ${goal} by mastering the essential concepts.`
+        },
+        {
+          title: `Practical ${goal}`,
+          description: `Apply your knowledge through practical exercises`,
+          estimatedTime: "3-4 hours",
+          content: `Practice makes perfect. In this module, you'll apply your theoretical knowledge.`
+        },
+        {
+          title: `Advanced ${goal}`,
+          description: `Dive deeper into advanced concepts`,
+          estimatedTime: "3-4 hours",
+          content: `Take your skills to the next level with advanced techniques and methodologies.`
+        },
+        {
+          title: `${goal} in the Real World`,
+          description: `Learn how to apply your skills in real-world scenarios`,
+          estimatedTime: "2-3 hours",
+          content: `Discover how professionals use these skills in industry settings.`
+        }
+      ];
+    } else {
+      // Return a fallback simple learning path
+      return [
+        `Module 1: Introduction to ${goal}`,
+        `Module 2: Core Concepts of ${goal}`,
+        `Module 3: Intermediate ${goal} Techniques`,
+        `Module 4: Advanced ${goal} Applications`,
+        `Module 5: Real-world ${goal} Projects`,
+      ];
+    }
   }
 };

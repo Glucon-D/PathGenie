@@ -233,7 +233,7 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
             <RiBrainLine className="text-white text-xl" />
           </motion.div>
           <span className="text-xl font-serif md:text-2xl font-bold bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-transparent">
-            ThinkForge
+            pathgenie
           </span>
         </motion.div>
       </div>
