@@ -60,13 +60,55 @@ const ModuleDetails = () => {
 
       setModuleName(moduleTitle);
 
-      const aiResponse = await generateModuleContent(moduleTitle, {
-        detailed: expanded,
-        includeExamples: expanded,
-      });
-
-      if (!aiResponse.sections || aiResponse.sections.length === 0)
-        throw new Error("Empty content");
+      // Define max retries and attempt counter
+      const maxRetries = 2;
+      let attempts = 0;
+      let success = false;
+      let aiResponse;
+      
+      // Retry logic for handling potential hallucinations
+      while (attempts <= maxRetries && !success) {
+        try {
+          aiResponse = await generateModuleContent(moduleTitle, {
+            detailed: expanded,
+            includeExamples: expanded,
+            // Add specific constraints to prevent hallucinations
+            constrainToFacts: true,
+            preventHallucination: true
+          });
+          
+          // Validate the response has essential properties
+          if (!aiResponse || !aiResponse.sections || aiResponse.sections.length === 0) {
+            throw new Error("Invalid content structure");
+          }
+          
+          // Additional validation for content quality
+          const isContentValid = aiResponse.sections.every(section => {
+            return (
+              section.title && 
+              section.content && 
+              section.content.length > 100 && // Minimum content length
+              !section.content.includes("I don't know") && // Avoid uncertainty phrases
+              !section.content.includes("I'm not sure") &&
+              !section.content.includes("As an AI")  // Avoid self-references
+            );
+          });
+          
+          if (isContentValid) {
+            success = true;
+          } else {
+            throw new Error("Generated content didn't meet quality standards");
+          }
+        } catch (err) {
+          attempts++;
+          console.warn(`Attempt ${attempts}/${maxRetries} failed: ${err.message}`);
+          if (attempts > maxRetries) {
+            throw err; // Re-throw if we've exhausted retries
+          }
+          // Short delay before retry
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
 
       if (expanded) {
         setIsExpanded(true);
@@ -92,6 +134,13 @@ const ModuleDetails = () => {
     }
   };
 
+  // Add a retry handler for content generation errors
+  const handleRetryContent = () => {
+    setContentError(false);
+    setError("");
+    loadContent(false); // Reload content from scratch
+  };
+  
   const handleComplete = async () => {
     try {
       const moduleIndexNum = parseInt(moduleIndex, 10);

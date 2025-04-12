@@ -130,33 +130,49 @@ export const generateModuleContent = async (moduleName, options = { detailed: fa
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const isTechTopic = isCodeRelatedTopic(moduleName);
 
-      const prompt = `Create educational content for: "${moduleName}"
-      Type: ${isTechTopic ? 'Technical/Programming' : 'General'}
-      Level: ${options.detailed ? 'Advanced' : 'Basic'}
+      const prompt = `Generate factual educational content about: "${moduleName}"
 
-      ${isTechTopic ? `Important: EVERY section must include:
-      - Practical code examples with explanations
-      - Working code snippets that demonstrate concepts
-      - Best practices and common patterns
-      - Error handling where relevant` : ''}
+      IMPORTANT CONSTRAINTS:
+      - ONLY include FACTUAL content that you are CERTAIN about
+      - If you don't know something, provide general, established information instead of specifics
+      - Do NOT include any subjective opinions or unverified information
+      - Focus only on core concepts that are well-established in this field
+      - AVOID mentioning specific products, companies, or people unless absolutely central to the topic
+      - DO NOT reference ANY current events, trends, or statistics
+      - DO NOT reference your capabilities or limitations
 
-      Return a JSON object strictly following this structure:
+      CONTENT TYPE: ${isTechTopic ? 'Technical/Programming' : 'General Education'}
+      LEVEL: ${options.detailed ? 'Advanced' : 'Basic'}
+      
+      CONTENT STRUCTURE:
+      - Begin with fundamental concepts that have remained stable for years
+      - Use factual, precise language without speculation
+      - Focus on explaining core principles and concepts
+      - Include practical examples that illustrate key points
+      - For code examples, use standard syntax and common patterns
+      ${isTechTopic ? '- Include code that follows standard conventions and works correctly' : ''}
+      
+      FORMAT:
+      Return a JSON object with this EXACT structure:
       {
-        "title": "${moduleName}",
+        "title": "Clear title for ${moduleName}",
         "type": "${isTechTopic ? 'technical' : 'general'}",
         "sections": [
           {
-            "title": "Section Title",
-            "content": "Detailed explanation",
-            "keyPoints": ["Key point 1", "Key point 2"],
+            "title": "Core Concept Name",
+            "content": "Factual explanation with concrete examples",
+            "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
             ${isTechTopic ? `"codeExample": {
               "language": "${getAppropriateLanguage(moduleName)}",
-              "code": "// Include working code here\\nfunction example() {\\n  // code implementation\\n}",
-              "explanation": "Explain how the code works"
+              "code": "// Standard, executable code example\\nfunction example() {\\n  // implementation\\n}",
+              "explanation": "Explanation of how the code works"
             }` : '"codeExample": null'}
           }
         ]
-      }`;
+      }
+      
+      Create ${options.detailed ? '4' : '3'} focused sections that cover essential aspects of the topic.
+      Keep all content factual and verifiable.`;
 
       const result = await model.generateContent(prompt);
       let text = result.response.text();
