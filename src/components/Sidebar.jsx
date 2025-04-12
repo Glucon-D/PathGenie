@@ -154,7 +154,7 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
                     }`}
                 >
                   {item.icon}
-                  <span className="font-medium">{item.label}</span>
+                  <span className="font-medium text-left">{item.label}</span>
                   {item.active && (
                     <motion.div
                       className="w-1.5 h-1.5 rounded-full bg-white ml-auto"

@@ -34,227 +34,102 @@ const ModuleDetails = () => {
   const [moduleName, setModuleName] = useState("");
   const databases = new Databases(client);
 
-  // Database constants
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
-  const COLLECTION_ID = import.meta.env.VITE_COLLECTION_ID;
-
-  const isCodeRelatedTopic = (title = "") => {
-    const techKeywords = {
-      programming: [
-        "javascript",
-        "python",
-        "java",
-        "coding",
-        "programming",
-        "typescript",
-      ],
-      web: [
-        "html",
-        "css",
-        "react",
-        "angular",
-        "vue",
-        "frontend",
-        "backend",
-        "fullstack",
-      ],
-      database: ["sql", "database", "mongodb", "postgres"],
-      software: [
-        "api",
-        "development",
-        "software",
-        "git",
-        "devops",
-        "algorithms",
-      ],
-      tech: ["computer science", "data structures", "networking", "cloud"],
-    };
-
-    const lowerTitle = title.toLowerCase();
-    return Object.values(techKeywords).some((category) =>
-      category.some((keyword) => lowerTitle.includes(keyword))
-    );
-  };
+  const COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
 
   const loadContent = async (expanded = false) => {
     try {
-      if (expanded) {
-        setIsLoadingMore(true);
-      } else {
-        setLoading(true);
-        setContentError(false);
-      }
       setError("");
+      if (expanded) setIsLoadingMore(true);
+      else setLoading(true);
 
-      // Get the module title from the learning path document
       const response = await databases.getDocument(
         DATABASE_ID,
         COLLECTION_ID,
         pathId
       );
 
-      console.log("Raw path document:", response); // Debug log
+      const modules = JSON.parse(response.modules || "[]");
+      const moduleIndexNum = parseInt(moduleIndex, 10);
+      const module = modules[moduleIndexNum];
 
-      // Parse the modules array from the response
-      let modules;
-      try {
-        modules = JSON.parse(response.modules || "[]");
-        console.log("Parsed modules:", modules); // Debug log
-      } catch (err) {
-        console.error("Error parsing modules JSON:", err);
-        setError("Could not parse modules data");
-        setContentError(true);
-        setLoading(false);
-        setIsLoadingMore(false);
-        return;
-      }
+      const moduleTitle =
+        typeof module === "string"
+          ? module.split(":").pop().trim()
+          : module?.title || `Module ${moduleIndexNum + 1}`;
 
-      const moduleIndex_num = parseInt(moduleIndex, 10);
-      
-      if (!modules || moduleIndex_num >= modules.length) {
-        setError("Module not found");
-        setContentError(true);
-        setLoading(false);
-        setIsLoadingMore(false);
-        return;
-      }
-      
-      // Check if modules are strings or objects
-      let moduleTitle;
-      if (typeof modules[moduleIndex_num] === 'string') {
-        moduleTitle = modules[moduleIndex_num].split(':').pop().trim();
-      } else if (typeof modules[moduleIndex_num] === 'object' && modules[moduleIndex_num].title) {
-        moduleTitle = modules[moduleIndex_num].title;
-      } else {
-        moduleTitle = `Module ${moduleIndex_num + 1}`;
-      }
-      
       setModuleName(moduleTitle);
-      console.log("Module title to generate content for:", moduleTitle); // Debug log
-      
-      // Determine if it's a tech/code-related topic
-      const isTechTopic = isCodeRelatedTopic(moduleTitle);
-      
+
+      const aiResponse = await generateModuleContent(moduleTitle, {
+        detailed: expanded,
+        includeExamples: expanded,
+      });
+
+      if (!aiResponse.sections || aiResponse.sections.length === 0)
+        throw new Error("Empty content");
+
       if (expanded) {
-        try {
-          // Generate detailed content for the module
-          const detailedContent = await generateModuleContent(moduleTitle, {
-            detailed: true,
-            includeExamples: true,
-          });
-          
-          console.log("Generated detailed content:", detailedContent);
-          
-          // Update state with the detailed content
-          setIsExpanded(true);
-          setContent((prevContent) => {
-            if (!prevContent) {
-              return detailedContent;
-            }
-            
-            return {
-              ...prevContent,
-              type: detailedContent.type || prevContent.type,
-              sections: [
-                ...prevContent.sections,
-                ...detailedContent.sections.map((section) => ({
-                  ...section,
-                  isNew: true, 
-                  isAdvanced: true,
-                })),
-              ],
-              difficulty: "advanced",
-              hasMoreContent: false,
-            };
-          });
-        } catch (err) {
-          console.error("Error generating detailed content:", err);
-          setError("Failed to load more content. Please try again.");
-        }
+        setIsExpanded(true);
+        setContent((prev) => ({
+          ...prev,
+          difficulty: "advanced",
+          hasMoreContent: false,
+          sections: [
+            ...prev.sections,
+            ...aiResponse.sections.map((s) => ({ ...s, isNew: true })),
+          ],
+        }));
       } else {
-        try {
-          // Generate basic content for initial load
-          console.log("Generating initial content for:", moduleTitle);
-          const initialContent = await generateModuleContent(moduleTitle, {
-            detailed: false,
-          });
-          
-          console.log("Generated initial content:", initialContent);
-          
-          if (!initialContent || !initialContent.sections || initialContent.sections.length === 0) {
-            throw new Error("Received empty content from Gemini");
-          }
-          
-          // Set the initial content
-          setContent({
-            ...initialContent,
-            hasMoreContent: true,
-          });
-        } catch (err) {
-          console.error("Error generating initial content:", err);
-          setContentError(true);
-          setError("Failed to generate content for this module. Please try refreshing.");
-        }
+        setContent({ ...aiResponse, hasMoreContent: true });
       }
-    } catch (error) {
-      console.error("Content loading error:", error);
+    } catch (err) {
+      console.error("Load error:", err);
+      setError("Failed to load content. Try again.");
       setContentError(true);
-      setError("Failed to load content. Please try again.");
     } finally {
       setLoading(false);
       setIsLoadingMore(false);
     }
   };
 
-  const handleRetryContent = () => {
-    setContentError(false);
-    loadContent(false);
+  const handleComplete = async () => {
+    try {
+      const moduleIndexNum = parseInt(moduleIndex, 10);
+  
+      // ✅ Mark in backend
+      const result = await markModuleComplete(pathId, moduleIndexNum);
+  
+      // ✅ Optional: update local UI
+      setIsCompleted(true);
+  
+      // ✅ Optional: show success or navigate back to LearningPath
+      setTimeout(() => {
+        navigate(`/learning-path/${pathId}`);
+      }, 1200);
+    } catch (error) {
+      console.error("Error marking module complete:", error);
+      setError("Failed to update module completion");
+    }
   };
+  
 
-  // Load content when the component mounts or when pathId/moduleIndex changes
   useEffect(() => {
     loadContent(false);
-    
-    // Check if module is already completed
-    const checkCompletionStatus = async () => {
+    const fetchCompletion = async () => {
       try {
-        const response = await databases.getDocument(
+        const doc = await databases.getDocument(
           DATABASE_ID,
           COLLECTION_ID,
           pathId
         );
-        
-        if (response.completedModules) {
-          const completedModules = JSON.parse(response.completedModules || '[]');
-          setIsCompleted(completedModules.includes(moduleIndex.toString()));
-        }
-      } catch (err) {
-        console.error("Error checking completion status:", err);
+        const completed = JSON.parse(doc.completedModules || "[]");
+        setIsCompleted(completed.includes(moduleIndex.toString()));
+      } catch (e) {
+        console.error("Check complete error:", e);
       }
     };
-    
-    checkCompletionStatus();
+    fetchCompletion();
   }, [pathId, moduleIndex]);
-
-  const handleComplete = async () => {
-    try {
-      // Mark the module as complete
-      await markModuleComplete(pathId, parseInt(moduleIndex, 10));
-      setIsCompleted(true);
-
-      // Show success state and redirect after delay
-      setTimeout(() => {
-        navigate(`/learning-path/${pathId}`);
-      }, 1500);
-    } catch (error) {
-      console.error("Error marking module complete:", error);
-      setError("Failed to update progress");
-    }
-  };
-
-  const handleBackToPath = () => {
-    navigate(`/learning-path/${pathId}`);
-  };
 
   const LoadingScreen = () => (
     <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gradient-to-br rounded-2xl from-slate-50 to-purple-50">
@@ -346,6 +221,11 @@ const ModuleDetails = () => {
     },
   };
 
+
+  const handleBackToPath = () => {
+    navigate(`/learning-path/${pathId}`);
+  };
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-2 md:p-6">
       <motion.div

@@ -188,21 +188,25 @@ export const markModuleComplete = async (pathId, moduleIndex) => {
     );
 
     const completedModules = JSON.parse(doc.completedModules || '[]');
-    if (!completedModules.includes(moduleIndex)) {
-      completedModules.push(moduleIndex);
+    if (!completedModules.includes(moduleIndex.toString())) {
+      completedModules.push(moduleIndex.toString());
     }
 
-    return await databases.updateDocument(
+    const progress = Math.round((completedModules.length / JSON.parse(doc.modules).length) * 100);
+
+    const updated = await databases.updateDocument(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
       import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID,
       pathId,
       {
         completedModules: JSON.stringify(completedModules),
-        progress: Math.round((completedModules.length / JSON.parse(doc.modules).length) * 100)
+        progress,
       }
     );
-  } catch (error) {
-    console.error('Module completion update error:', error);
-    throw error;
+
+    return updated;
+  } catch (err) {
+    console.error("Failed to mark module complete:", err);
+    throw err;
   }
 };

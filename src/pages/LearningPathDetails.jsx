@@ -26,7 +26,6 @@ const LearningPathDetails = () => {
   const [quizData, setQuizData] = useState(null);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
 
-  // Database constants
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
 
@@ -37,23 +36,16 @@ const LearningPathDetails = () => {
   const fetchCareerPath = async () => {
     try {
       setLoading(true);
-      // Get the career path document by ID
       const response = await databases.getDocument(
         DATABASE_ID,
         CAREER_PATHS_COLLECTION_ID,
         id
       );
-
-      console.log("Raw career path data:", response); // Debug log
-      
-      // Parse JSON fields
       let modules = [];
       try {
         modules = JSON.parse(response.modules || "[]");
-        // Convert string modules to objects if needed
         if (modules.length > 0 && typeof modules[0] === 'string') {
-          modules = modules.map((module, index) => {
-            // If it's just a string (like "Module 1: Introduction"), create an object
+          modules = modules.map((module) => {
             if (typeof module === 'string') {
               return {
                 title: module,
@@ -62,32 +54,24 @@ const LearningPathDetails = () => {
                 content: `This module will introduce you to ${module.split(':').pop().trim()}`
               };
             }
-            return module; // Already an object
+            return module;
           });
         }
       } catch (err) {
-        console.error("Error parsing modules:", err);
         modules = [];
       }
-      
       const parsedPath = {
         ...response,
         modules: modules,
         completedModules: JSON.parse(response.completedModules || "[]")
       };
-      
-      console.log("Processed career path data:", parsedPath); // Debug log
-      
       setCareerPath(parsedPath);
       setCompletedModules(parsedPath.completedModules);
-      // Set the first incomplete module as selected by default
       const firstIncompleteIndex = parsedPath.modules.findIndex(
         (_, index) => !parsedPath.completedModules.includes(index.toString())
       );
       setSelectedModuleIndex(firstIncompleteIndex >= 0 ? firstIncompleteIndex : 0);
-      
     } catch (error) {
-      console.error("Error fetching career path:", error);
       setError("Failed to load career path");
     } finally {
       setLoading(false);
@@ -96,35 +80,25 @@ const LearningPathDetails = () => {
 
   const handleModuleClick = (index) => {
     setSelectedModuleIndex(index);
-    // Clear any previous quiz data when switching modules
     setQuizData(null);
   };
 
   const handleViewModule = (index) => {
-    // Navigate to the ModuleDetails page with the path ID and module index
     navigate(`/learning-path/${id}/module/${index}`);
   };
 
   const handleMarkComplete = async () => {
     if (selectedModuleIndex === null) return;
-    
     try {
-      // Prepare updated completedModules array
       const moduleIdStr = selectedModuleIndex.toString();
-      let updatedCompletedModules;
-      
-      if (!completedModules.includes(moduleIdStr)) {
-        updatedCompletedModules = [...completedModules, moduleIdStr];
-      } else {
-        updatedCompletedModules = completedModules;
-      }
-      
-      // Calculate new progress percentage
+      const updatedCompletedModules = completedModules.includes(moduleIdStr)
+        ? completedModules
+        : [...completedModules, moduleIdStr];
+
       const newProgress = Math.round(
         (updatedCompletedModules.length / careerPath.modules.length) * 100
       );
-      
-      // Update the document in Appwrite
+
       await databases.updateDocument(
         DATABASE_ID,
         CAREER_PATHS_COLLECTION_ID,
@@ -134,38 +108,32 @@ const LearningPathDetails = () => {
           progress: newProgress
         }
       );
-      
-      // Update local state
+
       setCompletedModules(updatedCompletedModules);
       setCareerPath({
         ...careerPath,
         completedModules: updatedCompletedModules,
         progress: newProgress
       });
-      
+
       toast.success("Module marked as complete!");
-      
-      // Auto-advance to next module if available
+
       if (selectedModuleIndex < careerPath.modules.length - 1) {
         setSelectedModuleIndex(selectedModuleIndex + 1);
       }
-      
     } catch (error) {
-      console.error("Error updating completion status:", error);
       toast.error("Failed to mark module as complete");
     }
   };
-  
+
   const generateModuleQuiz = async () => {
     if (!careerPath?.modules[selectedModuleIndex]) return;
-    
     try {
       setLoadingQuiz(true);
       const moduleTitle = careerPath.modules[selectedModuleIndex].title;
       const quiz = await generateQuiz(moduleTitle);
       setQuizData(quiz);
     } catch (error) {
-      console.error("Failed to generate quiz:", error);
       toast.error("Failed to generate quiz");
     } finally {
       setLoadingQuiz(false);
@@ -266,20 +234,18 @@ const LearningPathDetails = () => {
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className={`p-3 mb-2 rounded-lg cursor-pointer transition-all ${
-                    selectedModuleIndex === index
+                  className={`p-3 mb-2 rounded-lg cursor-pointer transition-all ${selectedModuleIndex === index
                       ? "bg-blue-50 border-l-4 border-blue-500"
                       : "hover:bg-blue-50"
-                  }`}
+                    }`}
                   onClick={() => handleModuleClick(index)}
                 >
                   <div className="flex items-center gap-3">
                     <div
-                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold ${
-                        completedModules.includes(index.toString())
+                      className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-semibold ${completedModules.includes(index.toString())
                           ? "bg-green-100 text-green-600"
                           : "bg-blue-100 text-blue-600"
-                      }`}
+                        }`}
                     >
                       {completedModules.includes(index.toString()) ? (
                         <RiCheckboxCircleFill />
@@ -288,9 +254,10 @@ const LearningPathDetails = () => {
                       )}
                     </div>
                     <div className="flex-1">
-                      <h3 className="text-sm font-medium text-gray-900 truncate">
+                      <h3 className="text-sm font-medium text-gray-900 whitespace-normal break-words">
                         {module.title}
                       </h3>
+
                     </div>
                   </div>
                 </motion.div>
@@ -326,7 +293,7 @@ const LearningPathDetails = () => {
                         <span>View Content</span>
                         <RiArrowRightLine />
                       </button>
-                      
+
                       {completedModules.includes(selectedModuleIndex.toString()) ? (
                         <div className="px-3 py-1 bg-green-100 text-green-600 rounded-full text-sm font-medium flex items-center gap-1">
                           <RiCheckboxCircleFill />
@@ -362,7 +329,7 @@ const LearningPathDetails = () => {
                       {!selectedModule.description && !selectedModule.content && (
                         <p>This module focuses on {selectedModule.title} concepts and techniques.</p>
                       )}
-                      
+
                       <div className="mt-6 flex items-center justify-center">
                         <motion.button
                           whileHover={{ scale: 1.02 }}
@@ -456,11 +423,10 @@ const LearningPathDetails = () => {
                         handleModuleClick(selectedModuleIndex - 1);
                       }
                     }}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-                      selectedModuleIndex > 0
+                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${selectedModuleIndex > 0
                         ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         : "bg-gray-50 text-gray-400 cursor-not-allowed"
-                    }`}
+                      }`}
                     disabled={selectedModuleIndex === 0}
                   >
                     <RiArrowLeftLine />
@@ -473,11 +439,10 @@ const LearningPathDetails = () => {
                         handleModuleClick(selectedModuleIndex + 1);
                       }
                     }}
-                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-                      selectedModuleIndex < careerPath.modules.length - 1
+                    className={`px-4 py-2 rounded-lg flex items-center gap-2 ${selectedModuleIndex < careerPath.modules.length - 1
                         ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         : "bg-gray-50 text-gray-400 cursor-not-allowed"
-                    }`}
+                      }`}
                     disabled={selectedModuleIndex === careerPath.modules.length - 1}
                   >
                     <span>Next</span>
