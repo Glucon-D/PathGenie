@@ -120,7 +120,7 @@ const isCodeRelatedTopic = (topic) => {
 };
 
 // Enhanced GROQ API integration with multiple models
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "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"; // Fallback for development
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 // List of GROQ models in order of preference
