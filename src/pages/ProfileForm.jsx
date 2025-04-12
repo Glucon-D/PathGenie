@@ -197,6 +197,103 @@ const ProfileForm = () => {
     }
   };
 
+  // New function to update existing career paths or create new ones based on updated profile
+  const updateCareerPaths = async (userID) => {
+    try {
+      // Get existing career paths
+      const existingPathsResponse = await databases.listDocuments(
+        DATABASE_ID,
+        CAREER_PATHS_COLLECTION_ID,
+        [Query.equal("userID", userID)]
+      );
+      
+      // Extract existing career path names
+      const existingPaths = existingPathsResponse.documents.map(doc => ({
+        id: doc.$id,
+        name: doc.careerName
+      }));
+      
+      // Check if career goal path exists
+      const careerGoalPath = existingPaths.find(path => 
+        path.name.toLowerCase() === formData.careerGoal.toLowerCase()
+      );
+      
+      // If career goal changed, create new path for it
+      if (!careerGoalPath) {
+        const mainCareerModules = await generateLearningPath(formData.careerGoal);
+        await databases.createDocument(
+          DATABASE_ID,
+          CAREER_PATHS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userID,
+            modules: JSON.stringify(mainCareerModules),
+            progress: 0,
+            careerName: formData.careerGoal,
+            completedModules: JSON.stringify([]),
+            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+            aiNudges: JSON.stringify([]),
+            summaryGenerated: false
+          }
+        );
+        toast.success(`Added new learning path for ${formData.careerGoal}`);
+      }
+      
+      // Update existing paths with new recommended skills
+      for (const path of existingPaths) {
+        await databases.updateDocument(
+          DATABASE_ID,
+          CAREER_PATHS_COLLECTION_ID,
+          path.id,
+          {
+            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5))
+          }
+        );
+      }
+      
+      // Check for new interests and create paths for them (max 2 new ones)
+      let newPathsCount = 0;
+      for (const interest of formData.interests) {
+        // Skip if we already have this interest path
+        if (existingPaths.some(path => 
+          path.name.toLowerCase() === interest.toLowerCase()
+        )) {
+          continue;
+        }
+        
+        // Limit to creating 2 new interest paths
+        if (newPathsCount >= 2) {
+          break;
+        }
+        
+        // Create new path for this interest
+        const interestModules = await generateLearningPath(interest);
+        await databases.createDocument(
+          DATABASE_ID,
+          CAREER_PATHS_COLLECTION_ID,
+          ID.unique(),
+          {
+            userID,
+            modules: JSON.stringify(interestModules),
+            progress: 0,
+            careerName: interest,
+            completedModules: JSON.stringify([]),
+            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+            aiNudges: JSON.stringify([]),
+            summaryGenerated: false
+          }
+        );
+        
+        newPathsCount++;
+      }
+      
+      return existingPaths.length + newPathsCount;
+    } catch (error) {
+      console.error("Error updating career paths:", error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -230,7 +327,12 @@ const ProfileForm = () => {
             response.documents[0].$id,
             userData
           );
-          toast.success("Profile updated successfully!");
+          
+          // Update existing career paths or add new ones based on updated profile
+          toast.loading("Updating your learning paths...", { duration: 5000 });
+          const totalPaths = await updateCareerPaths(currentUser.$id);
+          
+          toast.success(`Profile and ${totalPaths} learning paths updated!`);
         }
       } else {
         // Create a new profile
