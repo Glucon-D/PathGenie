@@ -61,20 +61,45 @@ const sanitizeContent = (text) => {
 
 const sanitizeJSON = (text) => {
   try {
+    // First, remove markdown code block markers
+    let cleanedText = text.replace(/```(?:json)?/g, '').trim();
+    
     // Extract JSON object/array from response
-    const jsonMatch = text.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
     if (!jsonMatch) return text;
     
-    return jsonMatch[0]
-      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '')
-      .replace(/\\[^"\\\/bfnrtu]/g, '\\\\')
-      .replace(/\\n/g, ' ')
-      .replace(/\r?\n|\r/g, ' ')
-      .replace(/```(?:json)?|/g, '')
+    // Clean up the extracted JSON
+    let jsonText = jsonMatch[0]
+      .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+      .replace(/\\[^"\\\/bfnrtu]/g, '\\\\')          // Fix invalid escapes
+      .replace(/\\n/g, ' ')                          // Replace newlines with spaces
+      .replace(/\r?\n|\r/g, ' ')                     // Replace carriage returns
+      .replace(/,\s*}/g, '}')                        // Fix trailing commas
+      .replace(/,\s*\]/g, ']')                       // Fix trailing commas
       .trim();
+    
+    // Validate if it's parseable
+    JSON.parse(jsonText);
+    
+    return jsonText;
   } catch (error) {
     console.error('JSON sanitization error:', error);
-    return text;
+    
+    // More aggressive fallback cleaning
+    try {
+      // Try to find and fix common JSON issues
+      let attempt = text
+        .replace(/```(?:json)?|```/g, '')  // Remove code blocks
+        .replace(/\/\//g, '')              // Remove comments
+        .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?\s*:/g, '"$2":') // Ensure property names are quoted
+        .replace(/,(\s*[}\]])/g, '$1')     // Remove trailing commas
+        .trim();
+      
+      const match = attempt.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+      return match ? match[0] : text;
+    } catch (e) {
+      return text; // Return original if all attempts fail
+    }
   }
 };
 

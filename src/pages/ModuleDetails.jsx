@@ -16,6 +16,9 @@ import {
   RiCheckLine,
   RiArrowRightLine,
   RiCodeLine,
+  RiArrowLeftLine,
+  RiLoader4Line,
+  RiRefreshLine,
 } from "react-icons/ri";
 
 const ModuleDetails = () => {
@@ -26,9 +29,14 @@ const ModuleDetails = () => {
   const [error, setError] = useState("");
   const [isCompleted, setIsCompleted] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [expandedContent, setExpandedContent] = useState(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [contentError, setContentError] = useState(false);
+  const [moduleName, setModuleName] = useState("");
   const databases = new Databases(client);
+
+  // Database constants
+  const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
+  const COLLECTION_ID = import.meta.env.VITE_COLLECTION_ID;
 
   const isCodeRelatedTopic = (title = "") => {
     const techKeywords = {
@@ -74,52 +82,91 @@ const ModuleDetails = () => {
         setIsLoadingMore(true);
       } else {
         setLoading(true);
+        setContentError(false);
       }
       setError("");
 
+      // Get the module title from the learning path document
       const response = await databases.getDocument(
-        import.meta.env.VITE_APPWRITE_DATABASE_ID,
-        import.meta.env.VITE_COLLECTION_ID,
+        DATABASE_ID,
+        COLLECTION_ID,
         pathId
       );
 
+      // Parse the modules array from the response
       const modules = JSON.parse(response.modules);
-      const moduleTitle = modules[parseInt(moduleIndex)];
+      const moduleTitle = modules[parseInt(moduleIndex, 10)];
+      
+      setModuleName(moduleTitle);
+      
+      // Determine if it's a tech/code-related topic
       const isTechTopic = isCodeRelatedTopic(moduleTitle);
+      
+      console.log("Loading content for module:", moduleTitle);
 
       if (expanded) {
-        const detailedContent = await generateModuleContent(moduleTitle, {
-          detailed: true,
-          includeExamples: true,
-        });
-
-        console.log("Generated content:", detailedContent); // For debugging
-
-        setContent((prevContent) => ({
-          ...prevContent,
-          type: detailedContent.type, // Ensure type is preserved
-          sections: [
-            ...prevContent.sections,
-            ...detailedContent.sections.map((section) => ({
-              ...section,
-              isNew: true,
-              isAdvanced: true,
-            })),
-          ],
-          difficulty: "advanced",
-          hasMoreContent: false,
-        }));
+        try {
+          // Generate detailed content for the module
+          const detailedContent = await generateModuleContent(moduleTitle, {
+            detailed: true,
+            includeExamples: true,
+          });
+          
+          console.log("Generated detailed content:", detailedContent);
+          
+          // Update state with the detailed content
+          setIsExpanded(true);
+          setContent((prevContent) => {
+            if (!prevContent) {
+              return detailedContent;
+            }
+            
+            return {
+              ...prevContent,
+              type: detailedContent.type || prevContent.type,
+              sections: [
+                ...prevContent.sections,
+                ...detailedContent.sections.map((section) => ({
+                  ...section,
+                  isNew: true, 
+                  isAdvanced: true,
+                })),
+              ],
+              difficulty: "advanced",
+              hasMoreContent: false,
+            };
+          });
+        } catch (err) {
+          console.error("Error generating detailed content:", err);
+          setError("Failed to load more content. Please try again.");
+        }
       } else {
-        const initialContent = await generateModuleContent(moduleTitle, {
-          detailed: false,
-        });
-        setContent({
-          ...initialContent,
-          hasMoreContent: true,
-        });
+        try {
+          // Generate basic content for initial load
+          const initialContent = await generateModuleContent(moduleTitle, {
+            detailed: false,
+          });
+          
+          console.log("Generated initial content:", initialContent);
+          
+          if (!initialContent || !initialContent.sections || initialContent.sections.length === 0) {
+            throw new Error("Received empty content from Gemini");
+          }
+          
+          // Set the initial content
+          setContent({
+            ...initialContent,
+            hasMoreContent: true,
+          });
+        } catch (err) {
+          console.error("Error generating initial content:", err);
+          setContentError(true);
+          setError("Failed to generate content for this module. Please try refreshing.");
+        }
       }
     } catch (error) {
       console.error("Content loading error:", error);
+      setContentError(true);
       setError("Failed to load content. Please try again.");
     } finally {
       setLoading(false);
@@ -127,14 +174,40 @@ const ModuleDetails = () => {
     }
   };
 
+  const handleRetryContent = () => {
+    setContentError(false);
+    loadContent(false);
+  };
+
+  // Load content when the component mounts or when pathId/moduleIndex changes
   useEffect(() => {
     loadContent(false);
+    
+    // Check if module is already completed
+    const checkCompletionStatus = async () => {
+      try {
+        const response = await databases.getDocument(
+          DATABASE_ID,
+          COLLECTION_ID,
+          pathId
+        );
+        
+        if (response.completedModules) {
+          const completedModules = JSON.parse(response.completedModules || '[]');
+          setIsCompleted(completedModules.includes(moduleIndex.toString()));
+        }
+      } catch (err) {
+        console.error("Error checking completion status:", err);
+      }
+    };
+    
+    checkCompletionStatus();
   }, [pathId, moduleIndex]);
 
   const handleComplete = async () => {
     try {
       // Mark the module as complete
-      await markModuleComplete(pathId, parseInt(moduleIndex));
+      await markModuleComplete(pathId, parseInt(moduleIndex, 10));
       setIsCompleted(true);
 
       // Show success state and redirect after delay
@@ -145,6 +218,10 @@ const ModuleDetails = () => {
       console.error("Error marking module complete:", error);
       setError("Failed to update progress");
     }
+  };
+
+  const handleBackToPath = () => {
+    navigate(`/learning-path/${pathId}`);
   };
 
   const LoadingScreen = () => (
@@ -169,15 +246,45 @@ const ModuleDetails = () => {
   );
 
   if (loading) return <LoadingScreen />;
-  if (error) {
+
+  if (contentError || error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-purple-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-purple-50 p-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-red-500 text-center bg-white/70 backdrop-blur-sm p-6 rounded-2xl shadow-xl border border-red-100"
+          className="text-center bg-white/90 backdrop-blur-sm p-8 rounded-2xl shadow-xl border border-red-100 max-w-md"
         >
-          {error}
+          <div className="text-red-500 flex flex-col items-center mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <h2 className="text-xl font-bold mt-4 text-red-600">Content Generation Failed</h2>
+          </div>
+          
+          <p className="text-gray-700 mb-6">
+            {error || "We couldn't generate content for this module. This might be due to a temporary issue with our AI service."}
+          </p>
+          
+          <div className="flex flex-col sm:flex-row gap-3 justify-center">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleRetryContent}
+              className="px-5 py-2 bg-blue-600 text-white rounded-lg flex justify-center items-center gap-2"
+            >
+              <RiRefreshLine /> Try Again
+            </motion.button>
+            
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleBackToPath}
+              className="px-5 py-2 bg-gray-200 text-gray-800 rounded-lg flex justify-center items-center gap-2"
+            >
+              <RiArrowLeftLine /> Back to Learning Path
+            </motion.button>
+          </div>
         </motion.div>
       </div>
     );
@@ -214,6 +321,25 @@ const ModuleDetails = () => {
         animate={{ opacity: 1 }}
         className="max-w-4xl mx-auto space-y-3.5 md:space-y-8"
       >
+        {/* Navigation Bar */}
+        <motion.div
+          initial={{ y: -20 }}
+          animate={{ y: 0 }}
+          className="flex justify-between items-center bg-white/70 backdrop-blur-sm rounded-2xl p-4 shadow-xl border border-blue-100/30"
+        >
+          <button
+            onClick={handleBackToPath}
+            className="p-2 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-2"
+          >
+            <RiArrowLeftLine className="w-5 h-5 text-blue-600" />
+            <span className="text-blue-600 hidden sm:inline">Back to Path</span>
+          </button>
+          
+          <div className="text-sm text-gray-600">
+            Module {parseInt(moduleIndex, 10) + 1}
+          </div>
+        </motion.div>
+
         {/* Enhanced Header section */}
         <motion.div
           initial={{ y: -20 }}
@@ -226,18 +352,15 @@ const ModuleDetails = () => {
             </div>
             <div>
               <h1 className="text-lg md:text-3xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                {content?.title}
+                {content?.title || moduleName}
               </h1>
-              <p className="text-gray-600 mt-1">
-                Module {parseInt(moduleIndex) + 1}
-              </p>
             </div>
           </div>
         </motion.div>
 
         {/* Enhanced Content section */}
         <motion.div className="prose prose-purple max-w-none space-y-3 md:space-y-6">
-          {content?.sections.map((section, index) => (
+          {content?.sections?.map((section, index) => (
             <motion.div
               key={index}
               initial={
@@ -254,6 +377,9 @@ const ModuleDetails = () => {
             >
               <h2 className="text-lg md:text-2xl font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-3 md:mb-6 flex items-center gap-3">
                 <span>{section.title}</span>
+                {section.isAdvanced && (
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Advanced</span>
+                )}
               </h2>
 
               <div className="text-gray-600 space-y-2 md:space-y-4">
@@ -262,13 +388,13 @@ const ModuleDetails = () => {
                 </ReactMarkdown>
               </div>
 
-              {/* Only render code example if it exists and topic is code-related */}
-              {section.codeExample && content.type === "technical" && (
-                <div className="flex justify-center">
+              {/* Only render code example if it exists */}
+              {section.codeExample && section.codeExample.code && (
+                <div className="flex justify-center mt-4">
                   <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
-                    className="mt-3 max-w-64 lg:max-w-xl md:max-w-full md:mt-6 bg-gray-900 rounded-xl overflow-hidden"
+                    className="w-full bg-gray-900 rounded-xl overflow-hidden"
                   >
                     <div className="flex items-center justify-between px-3 md:px-4 py-2 bg-gray-800">
                       <div className="flex items-center gap-2">
@@ -279,7 +405,7 @@ const ModuleDetails = () => {
                       </div>
                     </div>
                     <SyntaxHighlighter
-                      language={section.codeExample.language}
+                      language={section.codeExample.language || "javascript"}
                       style={vscDarkPlus}
                       className="!m-0"
                       showLineNumbers
@@ -296,110 +422,36 @@ const ModuleDetails = () => {
                   </motion.div>
                 </div>
               )}
+              
+              {/* Key Points */}
+              {section.keyPoints && section.keyPoints.length > 0 && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-100">
+                  <h3 className="font-medium text-blue-700 mb-2">Key Points</h3>
+                  <ul className="list-disc pl-5 text-gray-600 space-y-1">
+                    {section.keyPoints.map((point, idx) => (
+                      <li key={idx}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </motion.div>
           ))}
-
-          {/* Expanded Content */}
-          {isExpanded && expandedContent && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              transition={{ duration: 0.5 }}
-              className="mt-8"
+          
+          {/* Loading more content indicator */}
+          {isLoadingMore && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex justify-center items-center p-8"
             >
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="p-6 bg-purple-50/50 backdrop-blur-sm rounded-2xl border border-purple-100/30 mb-3 md:mb-6"
-              >
-                <h3 className="text-lg md:text-xl font-semibold text-purple-600">
-                  Additional Content
-                </h3>
-                <p className="text-gray-600 mt-1">
-                  Explore more in-depth information about this topic
-                </p>
-              </motion.div>
-
-              {expandedContent.sections.map((section, index) => (
+              <div className="flex items-center gap-3">
                 <motion.div
-                  key={`expanded-${index}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 + 0.5 }}
-                  className="bg-white/70 backdrop-blur-sm p-4 md:p-8 rounded-2xl border border-purple-100/30 shadow-lg hover:shadow-xl transition-all duration-300"
-                >
-                  <h2 className="text-lg md:text-2xl font-semibold bg-gradient-to-r from-purple-600 to-indigo-600 bg-clip-text text-transparent mb-6">
-                    {section.title}
-                  </h2>
-
-                  <div className="text-gray-600 space-y-4 prose prose-purple max-w-none">
-                    <ReactMarkdown
-                      components={{
-                        ...renderers,
-                        p: ({ children }) => <p className="mb-4">{children}</p>,
-                        ul: ({ children }) => (
-                          <ul className="list-disc pl-3 md:pl-6 mb-4">
-                            {children}
-                          </ul>
-                        ),
-                        ol: ({ children }) => (
-                          <ol className="list-decimal pl-3 md:pl-6 mb-4">
-                            {children}
-                          </ol>
-                        ),
-                        h3: ({ children }) => (
-                          <h3 className="text-xl font-semibold text-gray-900 mt-6 mb-3">
-                            {children}
-                          </h3>
-                        ),
-                        blockquote: ({ children }) => (
-                          <blockquote className="border-l-4 border-purple-200 pl-4 italic my-4">
-                            {children}
-                          </blockquote>
-                        ),
-                      }}
-                    >
-                      {section.content}
-                    </ReactMarkdown>
-                  </div>
-
-                  {section.codeExample && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="mt-3 md:mt-6"
-                    >
-                      <div className="bg-gray-900 rounded-xl overflow-hidden">
-                        <div className="flex items-center justify-between px-2 md:px-4 py-2 bg-gray-800">
-                          <div className="flex items-center gap-2">
-                            <RiCodeLine className="text-gray-400" />
-                            <span className="text-xs text-gray-400">
-                              {section.codeExample.language}
-                            </span>
-                          </div>
-                        </div>
-                        <SyntaxHighlighter
-                          language={section.codeExample.language}
-                          style={vscDarkPlus}
-                          className="!m-0"
-                          showLineNumbers
-                          wrapLines
-                        >
-                          {section.codeExample.code}
-                        </SyntaxHighlighter>
-                        {section.codeExample.explanation && (
-                          <div className="px-4 py-3 bg-gray-800/50 border-t border-gray-700">
-                            <p className="text-xs text-gray-300">
-                              {section.codeExample.explanation}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </motion.div>
-                  )}
-                </motion.div>
-              ))}
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                  className="w-6 h-6 border-3 border-blue-200 border-t-blue-600 rounded-full"
+                />
+                <span className="text-blue-600 font-medium">Loading more content...</span>
+              </div>
             </motion.div>
           )}
         </motion.div>
@@ -408,7 +460,7 @@ const ModuleDetails = () => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="sticky bottom-6 flex justify-between items-center bg-white/80 backdrop-blur-sm p-4 gap-2 rounded-2xl border border-purple-100/30 shadow-xl"
+          className="sticky bottom-6 flex justify-between items-center bg-white/80 backdrop-blur-sm p-4 gap-2 rounded-2xl border border-blue-100/30 shadow-xl"
         >
           {content?.hasMoreContent && !isExpanded && (
             <motion.button
@@ -427,13 +479,13 @@ const ModuleDetails = () => {
                       repeat: Infinity,
                       ease: "linear",
                     }}
-                    className="w-4 h-4 border-2 border-purple-600/30 border-t-purple-600 rounded-full"
+                    className="w-4 h-4 border-2 border-blue-600/30 border-t-blue-600 rounded-full"
                   />
                   Loading...
                 </>
               ) : (
                 <>
-                  Read More
+                  Load Advanced Content
                   <RiArrowRightLine />
                 </>
               )}

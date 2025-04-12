@@ -62,7 +62,7 @@ export const updateLearningPathProgress = async (pathId, progress) => {
       pathId,
       {
         progress: Math.min(progress, 100), // Ensure progress doesn't exceed 100
-        updatedAt: new Date().toISOString()
+        // Removed updatedAt field which was causing the error
       }
     );
   } catch (error) {
@@ -198,8 +198,7 @@ export const markModuleComplete = async (pathId, moduleIndex) => {
       pathId,
       {
         completedModules: JSON.stringify(completedModules),
-        progress: Math.round((completedModules.length / JSON.parse(doc.modules).length) * 100),
-        updatedAt: new Date().toISOString()
+        progress: Math.round((completedModules.length / JSON.parse(doc.modules).length) * 100)
       }
     );
   } catch (error) {

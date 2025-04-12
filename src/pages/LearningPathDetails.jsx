@@ -44,12 +44,39 @@ const LearningPathDetails = () => {
         id
       );
 
+      console.log("Raw career path data:", response); // Debug log
+      
       // Parse JSON fields
+      let modules = [];
+      try {
+        modules = JSON.parse(response.modules || "[]");
+        // Convert string modules to objects if needed
+        if (modules.length > 0 && typeof modules[0] === 'string') {
+          modules = modules.map((module, index) => {
+            // If it's just a string (like "Module 1: Introduction"), create an object
+            if (typeof module === 'string') {
+              return {
+                title: module,
+                description: `Learn more about ${module.split(':').pop().trim()}`,
+                estimatedTime: "20-30 minutes",
+                content: `This module will introduce you to ${module.split(':').pop().trim()}`
+              };
+            }
+            return module; // Already an object
+          });
+        }
+      } catch (err) {
+        console.error("Error parsing modules:", err);
+        modules = [];
+      }
+      
       const parsedPath = {
         ...response,
-        modules: JSON.parse(response.modules || "[]"),
+        modules: modules,
         completedModules: JSON.parse(response.completedModules || "[]")
       };
+      
+      console.log("Processed career path data:", parsedPath); // Debug log
       
       setCareerPath(parsedPath);
       setCompletedModules(parsedPath.completedModules);
@@ -71,6 +98,11 @@ const LearningPathDetails = () => {
     setSelectedModuleIndex(index);
     // Clear any previous quiz data when switching modules
     setQuizData(null);
+  };
+
+  const handleViewModule = (index) => {
+    // Navigate to the ModuleDetails page with the path ID and module index
+    navigate(`/learning-path/${id}/module/${index}`);
   };
 
   const handleMarkComplete = async () => {
@@ -285,7 +317,16 @@ const LearningPathDetails = () => {
                         <span>{selectedModule.estimatedTime || "20-30 minutes"}</span>
                       </div>
                     </div>
-                    <div>
+                    <div className="flex gap-2">
+                      {/* View Full Content Button */}
+                      <button
+                        onClick={() => handleViewModule(selectedModuleIndex)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow hover:shadow-lg transition-all flex items-center gap-2 text-sm"
+                      >
+                        <span>View Content</span>
+                        <RiArrowRightLine />
+                      </button>
+                      
                       {completedModules.includes(selectedModuleIndex.toString()) ? (
                         <div className="px-3 py-1 bg-green-100 text-green-600 rounded-full text-sm font-medium flex items-center gap-1">
                           <RiCheckboxCircleFill />
@@ -321,6 +362,18 @@ const LearningPathDetails = () => {
                       {!selectedModule.description && !selectedModule.content && (
                         <p>This module focuses on {selectedModule.title} concepts and techniques.</p>
                       )}
+                      
+                      <div className="mt-6 flex items-center justify-center">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => handleViewModule(selectedModuleIndex)}
+                          className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg shadow-lg hover:shadow-xl transition-all flex items-center gap-2"
+                        >
+                          <span>View Detailed Content</span>
+                          <RiArrowRightLine />
+                        </motion.button>
+                      </div>
                     </div>
                   </div>
                 </div>
