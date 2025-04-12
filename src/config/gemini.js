@@ -646,3 +646,144 @@ export const generateLearningPath = async (goal, options = { type: 'topic', deta
     }
   }
 };
+
+export const generatePersonalizedCareerPaths = async (userData) => {
+  if (!userData || typeof userData !== "object") {
+    throw new Error("Invalid user data provided");
+  }
+
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    
+    const prompt = `
+    Create 4 highly personalized career/learning paths for a user with the following profile:
+    
+    Name: ${userData.name || 'Anonymous'}
+    Age: ${userData.age || 'Unknown'}
+    Career Goal: "${userData.careerGoal || 'Improve technical skills'}"
+    Current Skills: ${JSON.stringify(userData.skills || [])}
+    Interests: ${JSON.stringify(userData.interests || [])}
+    
+    For each career path:
+    1. Give it a specific, personalized name that aligns with their career goal and interests
+    2. Create between 5-8 modules (fewer for simpler topics, more for complex ones)
+    3. Make each module build logically on the previous ones
+    4. Tailor the content to leverage their existing skills and knowledge
+    5. Each career path should have a clear end goal that helps them progress toward their stated career objective
+    
+    Return EXACTLY 4 career paths in this JSON format:
+    [
+      {
+        "pathName": "Personalized path name based on their profile",
+        "description": "A brief description of this career path and how it helps them achieve their goal",
+        "difficulty": "beginner|intermediate|advanced",
+        "estimatedTimeToComplete": "X months",
+        "relevanceScore": 95, // How relevant this path is to their profile (0-100)
+        "modules": [
+          {
+            "title": "Module 1: Module Title",
+            "description": "Brief description of what this module covers",
+            "estimatedHours": 8, // Vary based on topic complexity
+            "keySkills": ["skill1", "skill2"]
+          },
+          // More modules...
+        ]
+      },
+      // 3 more paths...
+    ]
+    
+    Make sure the career paths are varied but all relevant to their profile. Paths should leverage their existing skills but push them toward their stated career goal. Module count should vary based on topic complexity.
+    `;
+
+    const result = await retry(() => model.generateContent(prompt));
+    const text = result.response.text();
+    
+    try {
+      const cleanText = sanitizeJSON(text);
+      const careerPaths = JSON.parse(cleanText);
+      
+      if (!Array.isArray(careerPaths) || careerPaths.length !== 4) {
+        throw new Error("Invalid career paths format");
+      }
+      
+      // Validate and clean up each career path
+      return careerPaths.map(path => ({
+        pathName: path.pathName || "Career Path",
+        description: path.description || `A learning path toward ${userData.careerGoal}`,
+        difficulty: ["beginner", "intermediate", "advanced"].includes(path.difficulty) ? 
+          path.difficulty : "intermediate",
+        estimatedTimeToComplete: path.estimatedTimeToComplete || "3 months",
+        relevanceScore: typeof path.relevanceScore === 'number' ? 
+          Math.max(0, Math.min(100, path.relevanceScore)) : 85,
+        modules: Array.isArray(path.modules) ? 
+          path.modules.map((module, idx) => ({
+            title: module.title || `Module ${idx + 1}`,
+            description: module.description || "Learn important skills in this area",
+            estimatedHours: typeof module.estimatedHours === 'number' ? module.estimatedHours : 8,
+            keySkills: Array.isArray(module.keySkills) ? module.keySkills : []
+          })) : 
+          generateDefaultModules(path.pathName || "Career Path", 5)
+      }));
+    } catch (error) {
+      console.error("Career path parsing error:", error);
+      
+      // Generate fallback career paths
+      return generateFallbackCareerPaths(userData);
+    }
+  } catch (error) {
+    console.error("Error generating personalized career paths:", error);
+    throw error;
+  }
+};
+
+// Helper function to generate default modules for fallback
+const generateDefaultModules = (pathName, count) => {
+  return Array.from({ length: count }, (_, i) => ({
+    title: `Module ${i + 1}: ${pathName} Fundamentals ${i + 1}`,
+    description: `Learn essential concepts and skills related to ${pathName}`,
+    estimatedHours: 8,
+    keySkills: []
+  }));
+};
+
+// Generate fallback career paths if the API fails
+const generateFallbackCareerPaths = (userData) => {
+  const goal = userData.careerGoal || "tech career";
+  const interests = userData.interests || ["programming", "technology"];
+  const skills = userData.skills || ["basic coding"];
+  
+  return [
+    {
+      pathName: `${goal} Fundamentals`,
+      description: `Master the core concepts needed for a successful career in ${goal}`,
+      difficulty: "beginner",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 90,
+      modules: generateDefaultModules(`${goal} Fundamentals`, 5)
+    },
+    {
+      pathName: `Advanced ${interests[0] || "Tech"} Specialization`,
+      description: `Deepen your knowledge in ${interests[0] || "technology"} to stand out in your career`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "4 months",
+      relevanceScore: 85,
+      modules: generateDefaultModules(`${interests[0] || "Tech"} Specialization`, 6)
+    },
+    {
+      pathName: `${skills[0] || "Coding"} Mastery`,
+      description: `Build upon your existing ${skills[0] || "coding"} skills to reach expert level`,
+      difficulty: "advanced",
+      estimatedTimeToComplete: "5 months",
+      relevanceScore: 80,
+      modules: generateDefaultModules(`${skills[0] || "Coding"} Mastery`, 7)
+    },
+    {
+      pathName: `Practical ${goal} Projects`,
+      description: `Apply your knowledge through hands-on projects relevant to ${goal}`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 88,
+      modules: generateDefaultModules(`${goal} Projects`, 5)
+    }
+  ];
+};

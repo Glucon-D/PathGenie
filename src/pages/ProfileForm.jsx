@@ -7,7 +7,7 @@ import { account } from "../config/appwrite";
 import { databases } from "../config/database";
 import { ID, Query } from "appwrite";
 import { toast } from "react-hot-toast";
-import { generateLearningPath } from "../config/gemini";
+import { generateLearningPath, generatePersonalizedCareerPaths } from "../config/gemini";
 import { useAuth } from "../context/AuthContext";
 
 const ProfileForm = () => {
@@ -149,51 +149,114 @@ const ProfileForm = () => {
 
   const generateCareerPaths = async (userID) => {
     try {
-      // Generate career paths based on user interests and career goal
-      const careerPaths = [];
-
-      // Create a career path for the main career goal
-      const mainCareerModules = await generateLearningPath(formData.careerGoal);
-      careerPaths.push({
-        userID,
-        modules: JSON.stringify(mainCareerModules),
-        progress: 0,
-        careerName: formData.careerGoal,
-        completedModules: JSON.stringify([]),
-        recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
-        aiNudges: JSON.stringify([]),
-        summaryGenerated: false
-      });
-
-      // Generate additional career paths based on top interests (max 2)
-      for (const interest of formData.interests.slice(0, 2)) {
-        const interestModules = await generateLearningPath(interest);
-        careerPaths.push({
-          userID,
-          modules: JSON.stringify(interestModules),
-          progress: 0,
-          careerName: interest,
-          completedModules: JSON.stringify([]),
-          recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
-          aiNudges: JSON.stringify([]),
-          summaryGenerated: false
-        });
-      }
-
+      // Generate personalized career paths using the complete user profile data
+      const userData = {
+        name: formData.name,
+        age: formData.age,
+        careerGoal: formData.careerGoal,
+        interests: formData.interests,
+        skills: formData.skills
+      };
+      
+      // Get personalized career paths
+      const personalizedPaths = await generatePersonalizedCareerPaths(userData);
+      
       // Create career path documents in Appwrite
-      for (const careerPath of careerPaths) {
+      for (const path of personalizedPaths) {
+        // Skip if the path name matches the career goal exactly
+        if (path.pathName === formData.careerGoal) {
+          continue;
+        }
+        
+        // Ensure module titles are proper topics, not just numbered versions of the path
+        const moduleTitles = path.modules.map(m => {
+          // Extract and clean module title
+          let title = m.title;
+          
+          // Remove any numbering like "Path Name 1: " or "1. "
+          title = title.replace(/^\d+[\.:]\s*/, '');
+          title = title.replace(new RegExp(`^${path.pathName}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+          
+          // If after cleaning, the title is too short or identical to path name,
+          // replace with the topic's actual content description
+          if (title.length < 5 || title === path.pathName) {
+            return m.description?.split('.')[0] || title; // Use first sentence of description
+          }
+          
+          return title;
+        });
+        
         await databases.createDocument(
           DATABASE_ID,
           CAREER_PATHS_COLLECTION_ID,
           ID.unique(),
-          careerPath
+          {
+            userID: userID,                                    
+            modules: JSON.stringify(moduleTitles),             
+            progress: 0,                                       
+            careerName: path.pathName,                         
+            completedModules: JSON.stringify([]),              
+            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)), 
+            aiNudges: JSON.stringify([]),                      
+            summaryGenerated: false,                           
+          }
         );
       }
 
-      return careerPaths.length;
+      return personalizedPaths.filter(path => path.pathName !== formData.careerGoal).length;
     } catch (error) {
       console.error("Error generating career paths:", error);
-      throw error;
+      
+      // Fallback to the original simple method if the personalized approach fails
+      try {
+        const careerPaths = [];
+
+        // Generate career paths based on top interests (max 3)
+        for (const interest of formData.interests.slice(0, 3)) {
+          // Skip if the interest matches the career goal exactly
+          if (interest === formData.careerGoal) {
+            continue;
+          }
+          
+          // Generate proper topic-oriented modules
+          const interestModules = await generateLearningPath(interest);
+          
+          // Clean up module names to ensure they're proper topics
+          const cleanedModules = interestModules.map(module => {
+            // Remove any numbering or prefixes like "Interest Name 1: "
+            let cleanedName = module;
+            cleanedName = cleanedName.replace(/^\d+[\.:]\s*/, '');
+            cleanedName = cleanedName.replace(new RegExp(`^${interest}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+            return cleanedName;
+          }).filter(module => module.length > 3); // Filter out any too short modules
+          
+          careerPaths.push({
+            userID: userID,
+            modules: JSON.stringify(cleanedModules),
+            progress: 0,
+            careerName: interest,
+            completedModules: JSON.stringify([]),
+            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+            aiNudges: JSON.stringify([]),
+            summaryGenerated: false
+          });
+        }
+
+        // Create career path documents in Appwrite
+        for (const careerPath of careerPaths) {
+          await databases.createDocument(
+            DATABASE_ID,
+            CAREER_PATHS_COLLECTION_ID,
+            ID.unique(),
+            careerPath
+          );
+        }
+
+        return careerPaths.length;
+      } catch (fallbackError) {
+        console.error("Even fallback path generation failed:", fallbackError);
+        throw fallbackError;
+      }
     }
   };
 
@@ -213,81 +276,103 @@ const ProfileForm = () => {
         name: doc.careerName
       }));
       
-      // Check if career goal path exists
-      const careerGoalPath = existingPaths.find(path => 
-        path.name.toLowerCase() === formData.careerGoal.toLowerCase()
-      );
+      // Generate fresh personalized paths based on updated profile
+      const userData = {
+        name: formData.name,
+        age: formData.age,
+        careerGoal: formData.careerGoal,
+        interests: formData.interests,
+        skills: formData.skills
+      };
       
-      // If career goal changed, create new path for it
-      if (!careerGoalPath) {
-        const mainCareerModules = await generateLearningPath(formData.careerGoal);
-        await databases.createDocument(
-          DATABASE_ID,
-          CAREER_PATHS_COLLECTION_ID,
-          ID.unique(),
-          {
-            userID,
-            modules: JSON.stringify(mainCareerModules),
-            progress: 0,
-            careerName: formData.careerGoal,
-            completedModules: JSON.stringify([]),
-            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
-            aiNudges: JSON.stringify([]),
-            summaryGenerated: false
-          }
-        );
-        toast.success(`Added new learning path for ${formData.careerGoal}`);
-      }
-      
-      // Update existing paths with new recommended skills
-      for (const path of existingPaths) {
-        await databases.updateDocument(
-          DATABASE_ID,
-          CAREER_PATHS_COLLECTION_ID,
-          path.id,
-          {
-            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5))
-          }
-        );
-      }
-      
-      // Check for new interests and create paths for them (max 2 new ones)
-      let newPathsCount = 0;
-      for (const interest of formData.interests) {
-        // Skip if we already have this interest path
-        if (existingPaths.some(path => 
-          path.name.toLowerCase() === interest.toLowerCase()
-        )) {
-          continue;
+      // Delete all existing paths if user profile has changed significantly
+      if (formData.careerGoal !== existingPathsResponse.documents[0]?.careerGoal) {
+        toast.loading("Your career goal has changed. Generating new personalized paths...", { duration: 4000 });
+        
+        // Delete existing paths
+        for (const path of existingPathsResponse.documents) {
+          await databases.deleteDocument(
+            DATABASE_ID,
+            CAREER_PATHS_COLLECTION_ID,
+            path.$id
+          );
         }
         
-        // Limit to creating 2 new interest paths
-        if (newPathsCount >= 2) {
-          break;
+        // Get new personalized paths
+        const personalizedPaths = await generatePersonalizedCareerPaths(userData);
+        
+        // Create new path documents
+        for (const path of personalizedPaths) {
+          // Skip if the path name matches the career goal exactly
+          if (path.pathName === formData.careerGoal) {
+            continue;
+          }
+          
+          // Ensure module titles are proper topics, not just numbered versions of the path
+          const moduleTitles = path.modules.map(m => {
+            // Extract and clean module title
+            let title = m.title;
+            
+            // Remove any numbering like "Path Name 1: " or "1. "
+            title = title.replace(/^\d+[\.:]\s*/, '');
+            title = title.replace(new RegExp(`^${path.pathName}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+            
+            // If after cleaning, the title is too short or identical to path name,
+            // replace with the topic's actual content description
+            if (title.length < 5 || title === path.pathName) {
+              return m.description?.split('.')[0] || title; // Use first sentence of description
+            }
+            
+            return title;
+          });
+          
+          await databases.createDocument(
+            DATABASE_ID,
+            CAREER_PATHS_COLLECTION_ID,
+            ID.unique(),
+            {
+              userID: userID,
+              modules: JSON.stringify(moduleTitles),
+              progress: 0,
+              careerName: path.pathName,
+              completedModules: JSON.stringify([]),
+              recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
+              aiNudges: JSON.stringify([]),
+              summaryGenerated: false,
+            }
+          );
         }
         
-        // Create new path for this interest
-        const interestModules = await generateLearningPath(interest);
-        await databases.createDocument(
-          DATABASE_ID,
-          CAREER_PATHS_COLLECTION_ID,
-          ID.unique(),
-          {
-            userID,
-            modules: JSON.stringify(interestModules),
-            progress: 0,
-            careerName: interest,
-            completedModules: JSON.stringify([]),
-            recommendedSkills: JSON.stringify(formData.skills.slice(0, 5)),
-            aiNudges: JSON.stringify([]),
-            summaryGenerated: false
+        return personalizedPaths.filter(path => path.pathName !== formData.careerGoal).length;
+      } else {
+        // Just update existing paths with new skills info
+        for (const path of existingPathsResponse.documents) {
+          // Skip updating if the path name matches the career goal (though this shouldn't happen now)
+          if (path.careerName === formData.careerGoal) {
+            // Delete this path as it shouldn't exist
+            await databases.deleteDocument(
+              DATABASE_ID,
+              CAREER_PATHS_COLLECTION_ID,
+              path.$id
+            );
+            continue;
           }
-        );
+          
+          await databases.updateDocument(
+            DATABASE_ID,
+            CAREER_PATHS_COLLECTION_ID,
+            path.$id,
+            {
+              recommendedSkills: JSON.stringify(formData.skills.slice(0, 5))
+            }
+          );
+        }
         
-        newPathsCount++;
+        // Filter out any paths that match the career goal
+        return existingPathsResponse.documents.filter(
+          doc => doc.careerName !== formData.careerGoal
+        ).length;
       }
-      
-      return existingPaths.length + newPathsCount;
     } catch (error) {
       console.error("Error updating career paths:", error);
       throw error;
