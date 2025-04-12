@@ -19,7 +19,7 @@ const App = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Sidebar starts closed
 
   return (
-    <div className="min-h-screen flex flex-col bg-background overflow-x-hidden">
+    <div className="min-h-screen flex flex-col bg-white overflow-x-hidden">
       {/* Navbar */}
       <Navbar
         isDashboard={showSidebar}

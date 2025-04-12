@@ -26,11 +26,11 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
         import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID,
         [Query.equal("userID", user.$id)]
       );
-      
+
       // Process all career paths to find quiz scores
       const paths = response.documents || [];
       let quizScores = [];
-      
+
       // Check if any assessments data exists in the career paths
       paths.forEach(path => {
         // If the path has quizScores, add them to our collection
@@ -40,7 +40,7 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
             quizScores = [...quizScores, ...pathQuizzes];
           }
         }
-        
+
         // If there are assessment dates from completed modules
         if (path.completedModules) {
           const completedModules = JSON.parse(path.completedModules || '[]');
@@ -304,10 +304,16 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
             onClick={handleLogin}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 hover:bg-blue-700"
+            className="px-5 py-2.5 bg-blue-600 text-white rounded-lg shadow-lg shadow-blue-500/20 
+             hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 
+             hover:shadow-xl hover:shadow-indigo-500/30 
+             transition-all duration-100 hover:backdrop-blur-sm
+             border border-transparent hover:border-white/30 
+             hover:text-white/90"
           >
             Login
           </motion.button>
+
           <motion.button
             onClick={handleSignup}
             whileHover={{ scale: 1.05 }}
