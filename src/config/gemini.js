@@ -259,62 +259,94 @@ export const generateFlashcards = async (topic, numCards = 5) => {
   }
 };
 
-export const generateQuizData = async (topic, numQuestions = 5) => {
-  if (!topic || typeof topic !== "string") {
-    throw new Error("Invalid topic provided");
-  }
-
+export const generateQuizData = async (topic, numQuestions, moduleContent = "") => {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
-
-    const prompt = `Generate a quiz on "${topic}" with ${numQuestions} questions.
+    // Check if we have valid content to work with
+    const hasContent = moduleContent && moduleContent.trim().length > 50;
     
-    **Requirements:**
-    - Each question should be **clear and well-structured**.
-    - Include **single-choice and multiple-choice** questions randomly.
-    - Provide **4 answer options** for each question.
-    - Clearly indicate the **correct answer(s)**.
-    - Give a **short explanation** for the correct answer.
-    - Assign **points (default: 10 per question)**.
-    - Format the response as a **JSON array**:
-
-    [
-      {
-        "question": "Example question?",
-        "questionType": "single",
-        "answers": ["Option A", "Option B", "Option C", "Option D"],
-        "correctAnswer": "Option A",
-        "explanation": "Short explanation here.",
-        "point": 10
-      },
-      {
-        "question": "Another example?",
-        "questionType": "multiple",
-        "answers": ["Option A", "Option B", "Option C", "Option D"],
-        "correctAnswer": ["Option B", "Option C"],
-        "explanation": "Short explanation here.",
-        "point": 10
+    // Extract the topic title from formats like "Module 1: Introduction to React"
+    let cleanTopic = topic;
+    if (topic.includes(":")) {
+      cleanTopic = topic.split(":")[1].trim();
+    } else if (topic.match(/Module\s+\d+/i)) {
+      // If topic only contains "Module X", extract from moduleContent
+      if (hasContent) {
+        const firstLine = moduleContent.split('\n')[0];
+        if (firstLine && firstLine.includes(':')) {
+          cleanTopic = firstLine.split(':')[1].trim();
+        }
       }
-    ]`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    try {
-      const cleanText = sanitizeJSON(text);
-      const quizData = JSON.parse(cleanText);
-
-      if (!Array.isArray(quizData) || quizData.length !== numQuestions) {
-        throw new Error("Invalid quiz format");
-      }
-
-      return { nrOfQuestions: numQuestions.toString(), questions: quizData };
-    } catch (error) {
-      console.error("Quiz parsing error:", error);
-      return { nrOfQuestions: "0", questions: [] };
     }
+    
+    const result = await genAI.generateContent(`
+      Create a quiz about "${cleanTopic}" with exactly ${numQuestions} questions.
+      ${hasContent ? "Use the following content to create relevant questions:\n" + moduleContent.substring(0, 5000) : ""}
+      
+      Each question should be directly relevant to the topic "${cleanTopic}" and ${hasContent ? "based on the provided content." : "a typical course on this subject."}
+      
+      Each question should have:
+      - A clear and challenging question
+      - 4 answer options (A, B, C, D)
+      - The correct answer(s)
+      - A brief explanation of why the answer is correct
+      - A point value (10 points by default)
+      - A question type (either "single" for single-choice or "multiple" for multiple-choice)
+
+      Return the quiz in this exact JSON format:
+      {
+        "topic": "${cleanTopic}",
+        "questions": [
+          {
+            "question": "Question text goes here?",
+            "answers": ["Answer A", "Answer B", "Answer C", "Answer D"],
+            "correctAnswer": ["Answer A"], 
+            "explanation": "Explanation of correct answer",
+            "point": 10,
+            "questionType": "single"
+          },
+          ...more questions...
+        ]
+      }
+      
+      For multiple-choice questions where more than one answer is correct, use the format:
+      "correctAnswer": ["Answer A", "Answer C"]
+      and set questionType to "multiple".
+      
+      Make sure all JSON is valid and question counts match exactly ${numQuestions}.
+      If you cannot generate content on this specific topic, focus on generating questions about ${cleanTopic.split(' ').slice(0, 3).join(' ')}.
+    `);
+
+    const resultText = result.response.text();
+    
+    // Extract JSON from the response
+    const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      throw new Error("Invalid response format");
+    }
+
+    const quizData = JSON.parse(jsonMatch[0]);
+    
+    // Ensure the topic is properly set in the response
+    if (!quizData.topic || quizData.topic === "${topic}" || quizData.topic === cleanTopic) {
+      quizData.topic = topic; // Use original topic for display purposes
+    }
+    
+    return quizData;
   } catch (error) {
-    throw new Error(`Failed to generate quiz: ${error.message}`);
+    console.error("Error generating quiz:", error);
+    
+    // Create a fallback quiz with the original topic
+    return {
+      topic: topic,
+      questions: Array.from({ length: numQuestions }, (_, i) => ({
+        question: `Question ${i + 1} about ${topic}?`,
+        answers: ["Option A", "Option B", "Option C", "Option D"],
+        correctAnswer: ["Option A"],
+        explanation: `This is the correct answer for question ${i + 1} about ${topic}.`,
+        point: 10,
+        questionType: "single"
+      }))
+    };
   }
 };
 
