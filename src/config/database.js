@@ -210,3 +210,54 @@ export const markModuleComplete = async (pathId, moduleIndex) => {
     throw err;
   }
 };
+
+
+export const saveQuizScore = async ({ userID, pathID, moduleID, score, feedback, timestamp }) => {
+  try {
+    const res = await databases.createDocument(
+      import.meta.env.VITE_APPWRITE_DATABASE_ID,
+      "assessments", // 👈 Collection ID
+      ID.unique(),
+      {
+        userID,
+        pathID,
+        moduleID,
+        score,
+        feedback,
+        timestamp
+      }
+    );
+    console.log("✅ Score saved in assessments:", res);
+    return res;
+  } catch (err) {
+    console.error("❌ Failed to save quiz score:", err);
+    throw err;
+  }
+};
+
+
+
+export const getQuizScores = async ({
+  userId = null,
+  pathId = null,
+  moduleId = null,
+} = {}) => {
+  try {
+    const queries = [];
+
+    if (userId) queries.push(Query.equal("userID", userId));
+    if (pathId) queries.push(Query.equal("pathID", pathId));
+    if (moduleId) queries.push(Query.equal("moduleID", moduleId));
+
+    const res = await databases.listDocuments(
+      import.meta.env.VITE_APPWRITE_DATABASE_ID,
+      "assessments",
+      queries
+    );
+
+    return res.documents;
+  } catch (error) {
+    console.error("❌ Error fetching quiz scores:", error);
+    return [];
+  }
+};
