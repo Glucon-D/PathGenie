@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import axios from "axios"; // Make sure axios is installed
 
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY, {
   apiUrl:
@@ -118,6 +119,63 @@ const isCodeRelatedTopic = (topic) => {
   );
 };
 
+// Enhanced GROQ API integration with multiple models
+const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "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"; // Fallback for development
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// List of GROQ models in order of preference
+const GROQ_MODELS = [
+  "llama3-70b-8192",    // Primary model - most capable
+  "llama3-8b-8192",     // First fallback - good balance of speed and quality
+  "mixtral-8x7b-32768", // Second fallback - different architecture
+  "gemma-7b-it"         // Third fallback - different model family
+];
+
+// Enhanced wrapper for GROQ API calls with model fallbacks
+const groqCompletion = async (prompt, preferredModel = "llama3-70b-8192") => {
+  // Start with preferred model, then fall back to others if needed
+  const modelsToTry = [
+    preferredModel, 
+    ...GROQ_MODELS.filter(model => model !== preferredModel)
+  ];
+  
+  let lastError = null;
+  
+  for (const modelName of modelsToTry) {
+    try {
+      console.log(`Trying GROQ with model: ${modelName}`);
+      
+      const response = await axios.post(
+        GROQ_API_URL,
+        {
+          model: modelName,
+          messages: [{ role: "user", content: prompt }],
+          temperature: 0.3,  // Lower temperature for factual responses
+          max_tokens: 4096,
+          top_p: 0.95
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${GROQ_API_KEY}`
+          }
+        }
+      );
+      
+      console.log(`Successfully generated content with GROQ model: ${modelName}`);
+      return response.data.choices[0].message.content;
+    } catch (error) {
+      lastError = error;
+      console.warn(`GROQ model ${modelName} failed:`, error.response?.data?.error?.message || error.message);
+      // Continue to next model
+    }
+  }
+  
+  // If we get here, all GROQ models failed
+  throw new Error(`All GROQ models failed: ${lastError.message}`);
+};
+
+// Updated module content generation function
 export const generateModuleContent = async (moduleName, options = { detailed: false }) => {
   if (!moduleName || typeof moduleName !== "string") {
     throw new Error("Invalid module name provided");
@@ -127,9 +185,9 @@ export const generateModuleContent = async (moduleName, options = { detailed: fa
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const isTechTopic = isCodeRelatedTopic(moduleName);
-
+      
+      // Enhanced prompt for content generation
       const prompt = `Generate factual educational content about: "${moduleName}"
 
       IMPORTANT CONSTRAINTS:
@@ -172,27 +230,58 @@ export const generateModuleContent = async (moduleName, options = { detailed: fa
       }
       
       Create ${options.detailed ? '4' : '3'} focused sections that cover essential aspects of the topic.
-      Keep all content factual and verifiable.`;
-
-      const result = await model.generateContent(prompt);
-      let text = result.response.text();
+      Keep all content factual and verifiable.
       
-      // Enhanced JSON cleaning and parsing
-      text = sanitizeJSON(text);
-      const content = JSON.parse(text);
+      ONLY RETURN VALID JSON WITHOUT ANY EXPLANATION OR INTRODUCTION.`;
 
-      if (!validateModuleContent(content)) {
-        throw new Error('Invalid content structure');
+      // Try all GROQ models first with better error handling
+      try {
+        // Select preferred model based on content type
+        const preferredModel = isTechTopic && options.detailed 
+          ? "llama3-70b-8192"  // Most powerful model for technical content
+          : "llama3-70b-8192"; // Still use 70B for non-technical for consistency
+        
+        const text = await groqCompletion(prompt, preferredModel);
+        const cleanedText = sanitizeJSON(text);
+        const content = JSON.parse(cleanedText);
+
+        if (!validateModuleContent(content)) {
+          throw new Error('Invalid content structure from GROQ');
+        }
+
+        // Process and clean content
+        content.sections = content.sections.map(section => ({
+          ...section,
+          content: sanitizeContent(section.content),
+          codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
+        }));
+
+        return content;
+      } catch (groqError) {
+        console.warn("ALL GROQ models failed, falling back to Gemini:", groqError);
+        
+        // Fall back to Gemini if all GROQ models fail
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const result = await model.generateContent(prompt);
+        let text = result.response.text();
+        
+        // Enhanced JSON cleaning and parsing
+        text = sanitizeJSON(text);
+        const content = JSON.parse(text);
+
+        if (!validateModuleContent(content)) {
+          throw new Error('Invalid content structure');
+        }
+
+        // Process and clean content
+        content.sections = content.sections.map(section => ({
+          ...section,
+          content: sanitizeContent(section.content),
+          codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
+        }));
+
+        return content;
       }
-
-      // Process and clean content
-      content.sections = content.sections.map(section => ({
-        ...section,
-        content: sanitizeContent(section.content),
-        codeExample: section.codeExample ? cleanCodeExample(section.codeExample) : null
-      }));
-
-      return content;
     } catch (error) {
       lastError = error;
       await sleep(RETRY_DELAY);
