@@ -159,9 +159,10 @@ const Quiz = () => {
                   onChange={(e) => setSelectedPathId(e.target.value)}
                   className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-blue-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm sm:text-base"
                 >
+                  <option value="">-- Select Learning Path --</option>
                   {paths.map((path) => (
                     <option key={path.$id} value={path.$id}>
-                      {path.topicName}
+                      {path.careerName || "Unnamed Path"}
                     </option>
                   ))}
                 </select>
@@ -200,14 +201,14 @@ const Quiz = () => {
             </div>
             <motion.button
               onClick={handleGenerateQuiz}
-              disabled={!selectedPathId && paths.length > 0}
+              disabled={!selectedPathId || !topic}
               className={`w-full py-3 ${
-                !selectedPathId && paths.length > 0
+                !selectedPathId || !topic
                   ? "bg-gray-300 cursor-not-allowed"
                   : "bg-gradient-to-r from-blue-600 to-blue-500 text-white"
               } rounded-xl font-medium shadow-lg text-sm sm:text-base`}
-              whileHover={{ scale: selectedPathId || paths.length === 0 ? 1.02 : 1 }}
-              whileTap={{ scale: selectedPathId || paths.length === 0 ? 0.98 : 1 }}
+              whileHover={{ scale: selectedPathId && topic ? 1.02 : 1 }}
+              whileTap={{ scale: selectedPathId && topic ? 0.98 : 1 }}
             >
               Generate Quiz
             </motion.button>

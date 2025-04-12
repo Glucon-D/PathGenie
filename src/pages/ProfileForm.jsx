@@ -5,12 +5,14 @@ import { RiArrowRightLine, RiLightbulbLine, RiUserLine, RiCalendarLine, RiFlag2L
 // Import Appwrite SDK
 import { account } from "../config/appwrite";
 import { databases } from "../config/database";
-import { ID } from "appwrite";
+import { ID, Query } from "appwrite";
 import { toast } from "react-hot-toast";
 import { generateLearningPath } from "../config/gemini";
+import { useAuth } from "../context/AuthContext";
 
 const ProfileForm = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: "",
@@ -22,11 +24,60 @@ const ProfileForm = () => {
   const [currentInterest, setCurrentInterest] = useState("");
   const [currentSkill, setCurrentSkill] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [profileExists, setProfileExists] = useState(false);
   
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const USERS_COLLECTION_ID = import.meta.env.VITE_USERS_COLLECTION_ID;
   const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
+
+  // Check if user profile already exists
+  useEffect(() => {
+    if (user) {
+      checkUserProfile();
+    }
+  }, [user]);
+
+  const checkUserProfile = async () => {
+    try {
+      const response = await databases.listDocuments(
+        DATABASE_ID,
+        USERS_COLLECTION_ID,
+        [Query.equal("userID", user.$id)]
+      );
+      
+      if (response.documents.length > 0) {
+        const userProfile = response.documents[0];
+        setFormData({
+          name: userProfile.name || "",
+          age: userProfile.age?.toString() || "",
+          careerGoal: userProfile.careerGoal || "",
+          interests: userProfile.interests ? JSON.parse(userProfile.interests) : [],
+          skills: userProfile.skills ? JSON.parse(userProfile.skills) : [],
+        });
+        setProfileExists(true);
+        
+        // Check if user already has career paths
+        const pathsResponse = await databases.listDocuments(
+          DATABASE_ID,
+          CAREER_PATHS_COLLECTION_ID,
+          [Query.equal("userID", user.$id)]
+        );
+        
+        if (pathsResponse.documents.length > 0) {
+          // Only redirect if user is initially loading the page
+          // If they explicitly want to update their profile, allow them to stay
+          const urlParams = new URLSearchParams(window.location.search);
+          if (!urlParams.get('update')) {
+            // User has a complete profile with career paths, redirect to dashboard
+            navigate("/learning-path");
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error checking user profile:", error);
+    }
+  };
 
   // Animation variants
   const containerVariants = {
@@ -154,11 +205,11 @@ const ProfileForm = () => {
     
     try {
       // Get the current user's information
-      const user = await account.get();
+      const currentUser = await account.get();
       
       // Format the data for Appwrite - removed createdAt field as it's not in the schema
       const userData = {
-        userID: user.$id,
+        userID: currentUser.$id,
         name: formData.name,
         age: parseInt(formData.age),
         careerGoal: formData.careerGoal,
@@ -166,26 +217,45 @@ const ProfileForm = () => {
         skills: JSON.stringify(formData.skills)
       };
       
-      // Create a new document in the users collection
-      await databases.createDocument(
-        DATABASE_ID,
-        USERS_COLLECTION_ID,
-        ID.unique(),
-        userData
-      );
-      
-      // Generate career paths based on user profile
-      toast.loading("Creating your personalized career paths...", { duration: 8000 });
-      const pathsCount = await generateCareerPaths(user.$id);
-      
-      // Show success message
-      toast.success(`Profile created with ${pathsCount} career paths!`);
+      if (profileExists) {
+        // Update existing profile
+        const response = await databases.listDocuments(
+          DATABASE_ID,
+          USERS_COLLECTION_ID,
+          [Query.equal("userID", currentUser.$id)]
+        );
+        
+        if (response.documents.length > 0) {
+          await databases.updateDocument(
+            DATABASE_ID,
+            USERS_COLLECTION_ID,
+            response.documents[0].$id,
+            userData
+          );
+          toast.success("Profile updated successfully!");
+        }
+      } else {
+        // Create a new profile
+        await databases.createDocument(
+          DATABASE_ID,
+          USERS_COLLECTION_ID,
+          ID.unique(),
+          userData
+        );
+        
+        // Generate career paths based on user profile
+        toast.loading("Creating your personalized career paths...", { duration: 8000 });
+        const pathsCount = await generateCareerPaths(currentUser.$id);
+        
+        // Show success message
+        toast.success(`Profile created with ${pathsCount} career paths!`);
+      }
       
       // Redirect to dashboard
       navigate("/learning-path");
     } catch (error) {
-      console.error("Error creating user profile:", error);
-      toast.error("Failed to create profile. Please try again.");
+      console.error("Error creating/updating user profile:", error);
+      toast.error("Failed to save profile. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -222,6 +292,19 @@ const ProfileForm = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
+        {profileExists && (
+          <motion.div 
+            className="mb-6 p-4 bg-green-50 border-l-4 border-green-500 rounded-lg"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <h3 className="text-green-800 font-medium mb-1">Profile Data Loaded</h3>
+            <p className="text-green-700 text-sm">
+              Your existing profile data has been loaded. You can review and update it as needed.
+            </p>
+          </motion.div>
+        )}
+      
         {/* Progress Bar */}
         <div className="mb-8">
           <div className="flex justify-between mb-2">
@@ -580,6 +663,8 @@ const ProfileForm = () => {
                     </svg>
                     Processing...
                   </>
+                ) : profileExists ? (
+                  <>Update Profile <RiArrowRightLine /></>
                 ) : (
                   <>Complete Profile <RiArrowRightLine /></>
                 )}

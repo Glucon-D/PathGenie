@@ -11,7 +11,8 @@ import {
   RiMessage3Line,
   RiCloseLine,
   RiMenuLine,
-  RiAwardLine
+  RiAwardLine,
+  RiUserLine
 } from 'react-icons/ri';
 
 const Sidebar = ({ isOpen, setIsOpen }) => {
@@ -24,6 +25,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
       label: "Dashboard",
       path: "/dashboard",
       active: location.pathname === "/dashboard",
+    },
+    {
+      icon: <RiUserLine className="text-xl" />,
+      label: "Profile",
+      path: "/profile",
+      active: location.pathname === "/profile",
     },
     {
       icon: <RiRocketLine className="text-xl" />,

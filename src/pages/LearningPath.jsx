@@ -32,6 +32,39 @@ const LearningPath = () => {
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
 
+  // Function to normalize career names for comparison
+  const normalizeCareerName = (name) => {
+    return name.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove special chars
+      .replace(/\s+/g, ' ')    // Replace multiple spaces with one
+      .trim();
+  };
+
+  // Function to deduplicate career paths
+  const deduplicatePaths = (paths) => {
+    // First create a map of normalized names to find potential duplicates
+    const nameMap = new Map();
+    paths.forEach(path => {
+      if (path.careerName) {
+        const normalizedName = normalizeCareerName(path.careerName);
+        if (nameMap.has(normalizedName)) {
+          // If this is a duplicate, keep the one that's more complete
+          const existing = nameMap.get(normalizedName);
+          // Choose the one with more modules or more progress as the primary
+          if ((path.modules?.length || 0) > (existing.modules?.length || 0) || 
+              path.progress > existing.progress) {
+            nameMap.set(normalizedName, path);
+          }
+        } else {
+          nameMap.set(normalizedName, path);
+        }
+      }
+    });
+    
+    // Return only unique paths
+    return Array.from(nameMap.values());
+  };
+
   useEffect(() => {
     fetchCareerPaths();
   }, []);
@@ -56,7 +89,10 @@ const LearningPath = () => {
         aiNudges: path.aiNudges ? JSON.parse(path.aiNudges) : []
       }));
       
-      setCareerPaths(parsedPaths);
+      // Apply deduplication to remove similar paths
+      const uniquePaths = deduplicatePaths(parsedPaths);
+      
+      setCareerPaths(uniquePaths);
       setError("");
     } catch (error) {
       console.error("Error fetching career paths:", error);

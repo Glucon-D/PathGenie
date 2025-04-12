@@ -147,7 +147,7 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
 
           {[
             { label: "Dashboard", path: "/dashboard", icon: "🏠" },
-            { label: "Profile", path: "/settings", icon: "👤" },
+            { label: "Profile", path: "/profile", icon: "👤" },
             { label: "Progress", path: "/progress", icon: "📊" },
           ].map((item) => (
             <motion.button
@@ -342,7 +342,7 @@ const Navbar = ({ isDashboard, isSidebarOpen, setIsSidebarOpen }) => {
                   </div>
                   {[
                     { label: "Dashboard", path: "/dashboard", icon: "🏠" },
-                    { label: "Profile", path: "/settings", icon: "👤" },
+                    { label: "Profile", path: "/profile", icon: "👤" },
                     { label: "Progress", path: "/progress", icon: "📊" },
                   ].map((item) => (
                     <motion.button
