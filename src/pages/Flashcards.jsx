@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { generateFlashcards } from "../config/gemini";
+import { generateFlashcards, generateAINudges } from "../config/gemini";
 import { updateUserProgress } from "../config/database";
 import { useAuth } from "../context/AuthContext";
 import { getLearningPaths } from "../config/database"; // Import this too if not already
+import NudgeCard from "../components/NudgeCard";
 
 const CustomCard = ({ card, isFlipped, onClick }) => (
   <div className="relative w-full h-[400px] cursor-pointer" onClick={onClick}>
@@ -54,6 +55,7 @@ const Flashcards = () => {
   const [selectedPath, setSelectedPath] = useState(null);
   const [modules, setModules] = useState([]);
   const [selectedModule, setSelectedModule] = useState("all");
+  const [flashcardNudges, setFlashcardNudges] = useState([]);
 
   useEffect(() => {
     const fetchPaths = async () => {
@@ -168,6 +170,29 @@ const Flashcards = () => {
     animate: { opacity: 1, y: 0 },
     exit: { opacity: 0, y: -20 }
   };
+
+  useEffect(() => {
+    const generateFlashcardNudges = async () => {
+      if (user && selectedPath && cards.length > 0) {
+        try {
+          const nudges = await generateAINudges(
+            user,
+            [], // No assessment data for flashcards
+            {
+              ...selectedPath,
+              flashcardCount: cards.length,
+              activity: "flashcards"
+            }
+          );
+          setFlashcardNudges(nudges);
+        } catch (error) {
+          console.error("Error generating flashcard nudges:", error);
+        }
+      }
+    };
+
+    generateFlashcardNudges();
+  }, [cards, user, selectedPath]);
 
   return (
     <motion.div
@@ -380,6 +405,27 @@ const Flashcards = () => {
                 </div>
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {/* Add nudges section after the cards are displayed */}
+        {cards.length > 0 && !loading && flashcardNudges.length > 0 && (
+          <motion.div
+            className="w-full max-w-2xl mx-auto mt-10 grid grid-cols-1 md:grid-cols-2 gap-4"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6, delay: 0.3 }}
+          >
+            <h3 className="col-span-full text-lg font-medium text-blue-700 mb-2">Learning Insights</h3>
+            {flashcardNudges.map((nudge, index) => (
+              <NudgeCard
+                key={index}
+                text={nudge.text}
+                type={nudge.type}
+                icon={nudge.icon}
+                elevated={true}
+              />
+            ))}
           </motion.div>
         )}
 
