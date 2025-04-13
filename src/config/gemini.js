@@ -1191,3 +1191,66 @@ const generateDefaultFallbackPaths = (userData) => {
     }
   ];
 };
+
+// Function to generate AI nudges
+export const generateAINudges = async (userData, assessmentData = [], pathData = null) => {
+  if (!userData) {
+    return [];
+  }
+
+  try {
+    const prompt = `Generate 3 personalized learning nudges for a student with the following profile:
+    
+    Career Path: ${pathData?.careerName || 'Learning journey'}
+    Progress: ${pathData?.progress || 0}%
+    Recent Assessments: ${assessmentData?.map(a => `Score: ${a.score}, Accuracy: ${a.accuracy}%`).join('; ') || 'No recent assessments'}
+    Completed Modules: ${pathData?.completedModules?.length || 0}
+    
+    Return exactly 3 nudges as a JSON array with this structure:
+    [
+      {
+        "type": "tip" | "recommendation" | "challenge",
+        "text": "The motivational/insightful message",
+        "actionText": "Optional call to action button text", 
+        "icon": "bulb" | "rocket"
+      }
+    ]
+    
+    Make nudges specific to their progress and performance.
+    Keep texts concise (max 150 characters).
+    One nudge should be a "challenge" type.`;
+
+    // Try using groqCompletion first
+    try {
+      const response = await groqCompletion(prompt, "llama3-70b-8192");
+      return JSON.parse(sanitizeJSON(response));
+    } catch (groqError) {
+      console.warn("GROQ failed for nudges, falling back to Gemini:", groqError);
+      
+      // Fallback to Gemini
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      return JSON.parse(sanitizeJSON(text));
+    }
+  } catch (error) {
+    console.error("Error generating nudges:", error);
+    return [
+      {
+        type: "tip",
+        text: "Keep learning consistently to maintain your progress!",
+        icon: "bulb"
+      },
+      {
+        type: "recommendation",
+        text: "Review previous modules to reinforce your knowledge.",
+        icon: "bulb"
+      },
+      {
+        type: "challenge",
+        text: "Try completing a quiz with 100% accuracy as your next goal.",
+        icon: "rocket"
+      }
+    ];
+  }
+};

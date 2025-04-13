@@ -6,6 +6,8 @@ import { account } from "../config/appwrite";
 import { databases } from "../config/database";
 import { Query } from "appwrite";
 import { toast } from "react-hot-toast";
+import { generateAINudges } from "../config/gemini";
+import NudgeCard from "../components/NudgeCard";
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -21,6 +23,7 @@ const Dashboard = () => {
     totalModulesCompleted: 0,
     avgQuizScore: 0
   });
+  const [aiNudges, setAiNudges] = useState([]);
 
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
@@ -47,6 +50,21 @@ const Dashboard = () => {
 
     fetchAllUserData();
   }, []);
+
+  useEffect(() => {
+    const fetchNudges = async () => {
+      if (user && paths.length > 0 && recentActivity.length > 0) {
+        try {
+          const nudges = await generateAINudges(user, recentActivity, paths[0]);
+          setAiNudges(nudges);
+        } catch (error) {
+          console.error("Error fetching nudges:", error);
+        }
+      }
+    };
+
+    fetchNudges();
+  }, [user, paths, recentActivity]);
 
   const fetchRecentActivity = async () => {
     try {
@@ -449,6 +467,26 @@ const Dashboard = () => {
                 </motion.div>
               ))}
             </div>
+
+            {/* Add nudges section */}
+            {!isLoading && aiNudges.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"
+              >
+                {aiNudges.map((nudge, index) => (
+                  <NudgeCard
+                    key={index}
+                    text={nudge.text}
+                    type={nudge.type}
+                    icon={nudge.icon}
+                    actionText={nudge.actionText}
+                    onAction={() => navigate('/learning-path')}
+                  />
+                ))}
+              </motion.div>
+            )}
 
             {/* Two-column layout for Paths and Activity */}
             <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
