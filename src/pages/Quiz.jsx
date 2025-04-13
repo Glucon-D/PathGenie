@@ -1,17 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { generateQuizData } from "../config/gemini";
+import { generateQuiz } from "../config/gemini"; 
 import QuizCard from "../components/QuizCard";
 import { useAuth } from "../context/AuthContext";
 import { updateUserProgress, getLearningPaths } from "../config/database";
 import { AiOutlineLeft, AiOutlineRight } from "react-icons/ai";
 import { useParams, useLocation } from "react-router-dom";
+import { saveQuizScore } from "../config/database";
+
 
 const Quiz = () => {
   const [topic, setTopic] = useState("");
   const [numQuestions, setNumQuestions] = useState(5);
   const [quizData, setQuizData] = useState(null);
   const [userAnswers, setUserAnswers] = useState({});
+  const [error, setError] = useState(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showResults, setShowResults] = useState(false);
   const [score, setScore] = useState(0);
@@ -290,58 +293,39 @@ const Quiz = () => {
       alert("Please enter a valid topic and number of questions.");
       return;
     }
-
+  
     if (!selectedPathId) {
       alert("Please select a learning path to associate with this quiz.");
       return;
     }
-
+  
     setLoading(true);
     try {
-      // Use the module title directly as the quiz topic
-      let quizTopic = topic;
-
-      // Ensure the topic isn't too generic
-      if (quizTopic.match(/^(module|section|lesson|chapter)\s+\d+$/i)) {
-        // If it's just "Module X", add the path name for context
-        quizTopic = `${selectedPath?.careerName || 'Learning'}: ${quizTopic}`;
-      }
-
-      // Ensure there is enough content to generate a quiz
-      let enhancedContent = quizContent;
-
-      // If selected specific module, focus only on that module's content
-      if (selectedModule !== "all" && modules.length > 0) {
-        const moduleIndex = parseInt(selectedModule);
-        if (!isNaN(moduleIndex) && moduleIndex >= 0 && moduleIndex < modules.length) {
-          const module = modules[moduleIndex];
-          // Add introduction to specify what the quiz should focus on
-          enhancedContent = `This quiz should focus specifically on ${quizTopic}.\n\n${enhancedContent}`;
-        }
-      }
-
-      if (!enhancedContent || enhancedContent.trim().length < 50) {
-        // If module content is too short, add path name and module titles for context
-        enhancedContent = `${selectedPath?.careerName || 'Learning Path'}\n\n` +
-          modules.map(m => {
-            const cleanTitle = (m.title || '').replace(/^Module\s+\d+\s*:\s*/i, '');
-            return `${cleanTitle}: ${m.description || ''}`;
-          }).join('\n\n');
-      }
-
-      console.log("Generating quiz about:", quizTopic);
-
-      // Generate quiz using the content from the selected module/path
-      const data = await generateQuizData(quizTopic, numQuestions, enhancedContent);
-      setQuizData(data);
+      const quizData = await generateQuiz(topic, numQuestions);
+  
+      // Format quizData if needed to match your structure
+      const formattedData = {
+        topic,
+        questions: quizData.questions.map((q) => ({
+          question: q.question,
+          answers: q.options,
+          correctAnswer: [q.options[q.correctIndex]],
+          explanation: q.explanation,
+          point: 10,
+          questionType: "single",
+        })),
+      };
+  
+      setQuizData(formattedData);
       setUserAnswers({});
       setShowResults(false);
       setScore(0);
       setAccuracy(0);
       setCurrentIndex(0);
+      setError(null); // ✅ Clear any previous error
     } catch (error) {
       console.error("Error generating quiz:", error);
-      alert("Failed to generate quiz. Please try again.");
+      setError("Failed to generate quiz. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -369,39 +353,59 @@ const Quiz = () => {
     if (showResults && quizData && user?.$id && selectedPathId) {
       let totalScore = 0;
       let correctCount = 0;
-
+  
       quizData.questions.forEach((q, index) => {
         const correctAnswer = Array.isArray(q.correctAnswer)
-          ? q.correctAnswer.sort()
+          ? [...q.correctAnswer].sort()
           : [q.correctAnswer];
-        const userAnswer = userAnswers[index]?.sort() || [];
-
+        const userAnswer = (userAnswers[index] || []).sort();
+  
         if (JSON.stringify(correctAnswer) === JSON.stringify(userAnswer)) {
           totalScore += q.point || 10;
           correctCount++;
         }
       });
-
+  
       setScore(totalScore);
       const accuracyValue = (
         (correctCount / quizData.questions.length) *
         100
       ).toFixed(2);
       setAccuracy(accuracyValue);
-
-      // Update user progress with the selected path ID
-      updateUserProgress(user.$id, selectedPathId, {
-        topicName: topic,
-        quizScores: {
-          topic,
-          score: totalScore,
-          accuracy: accuracyValue,
-          totalQuestions: quizData.questions.length,
-          date: new Date().toISOString(),
-        },
-      }).catch(console.error);
+  
+      // ✅ Save to assessments collection instead of updating career-paths
+      const payload = {
+        userID: user.$id,
+        pathID: selectedPathId,
+        moduleID: selectedModule || "all",
+        score: totalScore,
+        feedback: `Accuracy: ${accuracyValue}%`,
+        timestamp: new Date().toISOString(),
+      };
+  
+      saveQuizScore(payload)
+        .then(() => console.log("✅ Quiz score saved!"))
+        .catch((err) => console.error("❌ Error saving quiz result:", err));
     }
   }, [showResults, quizData, userAnswers, user, selectedPathId]);
+  const handleShowResults = async () => {
+    setShowResults(true);
+  
+    // 🧠 Call only after quiz is finished and results are ready
+    try {
+      await saveQuizScore({
+        userID: user?.$id,
+        pathID: selectedPathId,            // ⬅️ You should already have this in your state
+        moduleID: selectedModule || "all", // ⬅️ or send actual module id if you store it
+        score: score,                      // ⬅️ Final score from result
+        feedback: `${accuracy}% accuracy`, // ⬅️ Optional summary string
+        timestamp: new Date().toISOString()
+      });
+      console.log("✅ Quiz score saved!");
+    } catch (err) {
+      console.error("❌ Error saving quiz result:", err);
+    }
+  };
 
   if (loading) {
     return (
@@ -603,7 +607,7 @@ const Quiz = () => {
           {currentIndex === quizData.questions.length - 1 && (
             <div className="flex justify-center mt-6">
               <motion.button
-                onClick={() => setShowResults(true)}
+                onClick={handleShowResults}
                 className="bg-gradient-to-r from-blue-400 to-blue-500 text-white text-lg sm:text-2xl px-4 sm:px-6 py-2 sm:py-3 rounded-xl shadow-lg w-full sm:w-auto"
                 whileHover={{
                   scale: 1.05,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { RiArrowRightLine, RiLightbulbLine, RiUserLine, RiCalendarLine, RiFlag2Line, RiHeartLine, RiToolsLine } from "react-icons/ri";
+import { RiArrowRightLine, RiLightbulbLine, RiUserLine, RiCalendarLine, RiFlag2Line, RiHeartLine, RiToolsLine, RiQuestionLine } from "react-icons/ri";
 // Import Appwrite SDK
 import { account } from "../config/appwrite";
 import { databases } from "../config/database";
@@ -20,17 +20,165 @@ const ProfileForm = () => {
     careerGoal: "",
     interests: [],
     skills: [],
+    quizAnswers: {} // Add quiz answers to track user selections
   });
   const [currentInterest, setCurrentInterest] = useState("");
   const [currentSkill, setCurrentSkill] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [profileExists, setProfileExists] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState("Loading your profile..."); // Add dynamic loading message
+  const [currentQuoteIndex, setCurrentQuoteIndex] = useState(0);
+
+  const loadingQuotes = [
+    "Great things take time. We're crafting your personalized learning journey...",
+    "Success is built one step at a time. Analyzing your interests...",
+    "Your dedication to learning inspires us. Creating optimal paths...",
+    "The best investments are in yourself. Designing your roadmap...",
+    "Every expert was once a beginner. Tailoring content for your growth...",
+    "Learning is a journey, not a destination. Almost there...",
+    "Your future self will thank you for this. Final touches...",
+  ];
+
+  // Rotate quotes every 3 seconds during loading
+  useEffect(() => {
+    if (isSubmitting) {
+      const interval = setInterval(() => {
+        setCurrentQuoteIndex((prev) => (prev + 1) % loadingQuotes.length);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [isSubmitting]);
   
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const USERS_COLLECTION_ID = import.meta.env.VITE_USERS_COLLECTION_ID;
   const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
+
+  // Career interest quiz questions
+  const careerQuiz = [
+    {
+      id: 1,
+      question: "Which task would you enjoy doing the most?",
+      options: [
+        "A. Designing a robot to solve a problem",
+        "B. Writing a short story or directing a video",
+        "C. Running a mock business or analyzing stocks",
+        "D. Practicing a musical or dance performance",
+        "E. Organizing a community clean-up drive"
+      ]
+    },
+    {
+      id: 2,
+      question: "What's your go-to YouTube/Instagram content?",
+      options: [
+        "A. Science experiments, tech reviews",
+        "B. Poetry, creative reels, history facts",
+        "C. Finance tips, startup journeys",
+        "D. Music covers, dance routines",
+        "E. Mental health awareness, social causes"
+      ]
+    },
+    {
+      id: 3,
+      question: "Which school project would excite you the most?",
+      options: [
+        "A. Making a working model (like a volcano or sensor)",
+        "B. Creating a documentary or a comic strip",
+        "C. Planning a business fair or budgeting event",
+        "D. Performing a skit or choreographing a routine",
+        "E. Starting a social awareness campaign"
+      ]
+    },
+    {
+      id: 4,
+      question: "What do your friends often compliment you for?",
+      options: [
+        "A. Problem-solving or logic",
+        "B. Creativity or expression",
+        "C. Leadership or money sense",
+        "D. Energy or stage presence",
+        "E. Kindness or listening skills"
+      ]
+    },
+    {
+      id: 5,
+      question: "Imagine you're asked to lead a group—what role would you prefer?",
+      options: [
+        "A. Technical lead – building the solution",
+        "B. Content/design head – bringing ideas to life",
+        "C. Business lead – organizing and pitching",
+        "D. Performer – delivering the impact",
+        "E. Community coordinator – making it meaningful"
+      ]
+    },
+    {
+      id: 6,
+      question: "Which of these books/movies do you enjoy most?",
+      options: [
+        "A. Sci-fi (e.g., Interstellar, The Martian)",
+        "B. Biopics / Historical fiction (e.g., Hidden Figures)",
+        "C. Entrepreneurial / Strategic (e.g., Shark Tank, The Social Network)",
+        "D. Musical / Dance films (e.g., La La Land, Step Up)",
+        "E. Real-life impact stories (e.g., The Pursuit of Happyness)"
+      ]
+    },
+    {
+      id: 7,
+      question: "You're given a full day off to explore a new topic. You'd pick:",
+      options: [
+        "A. Coding / space / how things work",
+        "B. Drawing / writing / psychology",
+        "C. Stocks / brands / startups",
+        "D. Music / film / acting",
+        "E. Healthcare / teaching / environment"
+      ]
+    },
+    {
+      id: 8,
+      question: "How do you express yourself best?",
+      options: [
+        "A. Through logic or innovation",
+        "B. Through words, colors, or emotions",
+        "C. Through numbers, ideas, or business plans",
+        "D. Through rhythm, body, or voice",
+        "E. Through care, empathy, or advice"
+      ]
+    },
+    {
+      id: 9,
+      question: "Pick a school subject you'd choose as an elective:",
+      options: [
+        "A. Computer Science / Physics",
+        "B. Art / Literature / History",
+        "C. Accountancy / Economics",
+        "D. Music / Dance / Theatre",
+        "E. Biology / Psychology / Civics"
+      ]
+    },
+    {
+      id: 10,
+      question: "What type of feedback makes you happiest?",
+      options: [
+        "A. \"You're really smart at solving problems.\"",
+        "B. \"Your ideas are so original and expressive.\"",
+        "C. \"You're a born leader or entrepreneur.\"",
+        "D. \"You totally rocked that performance!\"",
+        "E. \"You're a great helper and listener.\""
+      ]
+    }
+  ];
+
+  // Handle quiz answer selection
+  const handleQuizAnswer = (questionId, option) => {
+    setFormData({
+      ...formData,
+      quizAnswers: {
+        ...formData.quizAnswers,
+        [questionId]: option.charAt(0) // Store just the letter (A, B, C, D, E)
+      }
+    });
+  };
 
   // Check if user profile already exists
   useEffect(() => {
@@ -56,6 +204,7 @@ const ProfileForm = () => {
           careerGoal: userProfile.careerGoal || "",
           interests: userProfile.interests ? JSON.parse(userProfile.interests) : [],
           skills: userProfile.skills ? JSON.parse(userProfile.skills) : [],
+          quizAnswers: {} // Initialize empty quiz answers for existing profiles
         });
         setProfileExists(true);
         
@@ -155,8 +304,11 @@ const ProfileForm = () => {
         age: formData.age,
         careerGoal: formData.careerGoal,
         interests: formData.interests,
-        skills: formData.skills
+        skills: formData.skills,
+        quizAnswers: formData.quizAnswers // Add quiz answers to the data sent to Gemini
       };
+      
+      setLoadingMessage("AI is analyzing your interests and generating personalized learning paths..."); // Update loading message
       
       // Get personalized career paths
       const personalizedPaths = await generatePersonalizedCareerPaths(userData);
@@ -171,28 +323,34 @@ const ProfileForm = () => {
         // Ensure module titles are proper topics, not just numbered versions of the path
         let moduleTitles = [];
         try {
-          moduleTitles = path.modules.map(m => {
-            // Extract and clean module title
-            let title = m.title || '';
-            
-            // Remove any numbering like "Path Name 1: " or "1. "
-            title = title.replace(/^\d+[\.:]\s*/, '');
-            // Use a safer regex that won't throw errors
-            try {
-              title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
-            } catch (e) {
-              // If regex fails, just keep the title as is
-              console.log('Regex error:', e);
-            }
-            
-            // If after cleaning, the title is too short or identical to path name,
-            // replace with the topic's actual content description
-            if (!title || title.length < 5 || title === path.pathName) {
-              return m.description ? m.description.split('.')[0] : 'Module';
-            }
-            
-            return title;
-          }).filter(title => title && title.trim() !== '');
+          // Make sure path.modules exists and is an array before mapping
+          if (Array.isArray(path.modules)) {
+            moduleTitles = path.modules.map(m => {
+              // Safely extract title
+              if (!m || !m.title) return "Module";
+              
+              // Extract and clean module title
+              let title = m.title || '';
+              
+              // Remove any numbering like "Path Name 1: " or "1. "
+              title = title.replace(/^\d+[\.:]\s*/, '');
+              // Use a safer regex that won't throw errors
+              try {
+                title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+              } catch (e) {
+                // If regex fails, just keep the title as is
+                console.log('Regex error:', e);
+              }
+              
+              // If after cleaning, the title is too short or identical to path name,
+              // replace with the topic's actual content description
+              if (!title || title.length < 5 || title === path.pathName) {
+                return m.description ? m.description.split('.')[0] : 'Module';
+              }
+              
+              return title;
+            }).filter(title => title && title.trim() !== '');
+          }
         } catch (moduleError) {
           console.error("Error processing module titles:", moduleError);
           // Provide a fallback set of module titles
@@ -300,11 +458,16 @@ const ProfileForm = () => {
         age: formData.age,
         careerGoal: formData.careerGoal,
         interests: formData.interests,
-        skills: formData.skills
+        skills: formData.skills,
+        quizAnswers: formData.quizAnswers // Add quiz answers to the data sent to Gemini
       };
       
-      // Delete all existing paths if user profile has changed significantly
-      if (formData.careerGoal !== existingPathsResponse.documents[0]?.careerGoal) {
+      // Check if there are any existing paths before accessing the first one
+      const shouldRegenerateAllPaths = existingPathsResponse.documents.length > 0 &&
+        formData.careerGoal !== existingPathsResponse.documents[0]?.careerGoal;
+      
+      if (shouldRegenerateAllPaths) {
+        setLoadingMessage("Your career goal has changed. Generating new personalized paths..."); 
         toast.loading("Your career goal has changed. Generating new personalized paths...", { duration: 4000 });
         
         // Delete existing paths
@@ -329,28 +492,34 @@ const ProfileForm = () => {
           // Ensure module titles are proper topics, not just numbered versions of the path
           let moduleTitles = [];
           try {
-            moduleTitles = path.modules.map(m => {
-              // Extract and clean module title
-              let title = m.title || '';
-              
-              // Remove any numbering like "Path Name 1: " or "1. "
-              title = title.replace(/^\d+[\.:]\s*/, '');
-              // Use a safer regex that won't throw errors
-              try {
-                title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
-              } catch (e) {
-                // If regex fails, just keep the title as is
-                console.log('Regex error:', e);
-              }
-              
-              // If after cleaning, the title is too short or identical to path name,
-              // replace with the topic's actual content description
-              if (!title || title.length < 5 || title === path.pathName) {
-                return m.description ? m.description.split('.')[0] : 'Module';
-              }
-              
-              return title;
-            }).filter(title => title && title.trim() !== '');
+            // Make sure path.modules exists and is an array before mapping
+            if (Array.isArray(path.modules)) {
+              moduleTitles = path.modules.map(m => {
+                // Safely extract title
+                if (!m || !m.title) return "Module";
+                
+                // Extract and clean module title
+                let title = m.title || '';
+                
+                // Remove any numbering like "Path Name 1: " or "1. "
+                title = title.replace(/^\d+[\.:]\s*/, '');
+                // Use a safer regex that won't throw errors
+                try {
+                  title = title.replace(new RegExp(`^${path.pathName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+\\d+[\\.:]?\\s*`, 'i'), '');
+                } catch (e) {
+                  // If regex fails, just keep the title as is
+                  console.log('Regex error:', e);
+                }
+                
+                // If after cleaning, the title is too short or identical to path name,
+                // replace with the topic's actual content description
+                if (!title || title.length < 5 || title === path.pathName) {
+                  return m.description ? m.description.split('.')[0] : 'Module';
+                }
+                
+                return title;
+              }).filter(title => title && title.trim() !== '');
+            }
           } catch (moduleError) {
             console.error("Error processing module titles:", moduleError);
             // Provide a fallback set of module titles
@@ -418,6 +587,7 @@ const ProfileForm = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setLoadingMessage("Saving your profile..."); // Set initial loading message
     
     try {
       // Get the current user's information
@@ -431,6 +601,7 @@ const ProfileForm = () => {
         careerGoal: formData.careerGoal,
         interests: JSON.stringify(formData.interests),
         skills: JSON.stringify(formData.skills)
+        // Note: We don't store quizAnswers in Appwrite, just use for Gemini
       };
       
       if (profileExists) {
@@ -450,7 +621,7 @@ const ProfileForm = () => {
           );
           
           // Update existing career paths or add new ones based on updated profile
-          toast.loading("Updating your learning paths...", { duration: 5000 });
+          setLoadingMessage("Updating your personalized learning paths..."); // Update loading message
           const totalPaths = await updateCareerPaths(currentUser.$id);
           
           toast.success(`Profile and ${totalPaths} learning paths updated!`);
@@ -465,7 +636,7 @@ const ProfileForm = () => {
         );
         
         // Generate career paths based on user profile
-        toast.loading("Creating your personalized career paths...", { duration: 8000 });
+        setLoadingMessage("Creating your personalized career paths..."); // Update loading message
         const pathsCount = await generateCareerPaths(currentUser.$id);
         
         // Show success message
@@ -495,7 +666,9 @@ const ProfileForm = () => {
       case 1:
         return formData.name.trim() !== "" && formData.age !== "";
       case 2:
-        return formData.careerGoal.trim() !== "";
+        // Require career goal and at least 5 quiz answers
+        return formData.careerGoal.trim() !== "" && 
+               Object.keys(formData.quizAnswers).length >= 5;
       case 3:
         return formData.interests.length > 0;
       case 4:
@@ -513,10 +686,94 @@ const ProfileForm = () => {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        {isLoading ? (
-          <div className="flex justify-center items-center py-16">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-blue-600">Loading your profile...</span>
+        {isLoading || isSubmitting ? (
+          <div className="flex flex-col justify-center items-center py-16">
+            {/* Loading Animation */}
+            <div className="relative">
+              <motion.div
+                className="w-16 h-16 border-4 border-blue-200 rounded-full"
+                animate={{
+                  rotate: 360,
+                  borderColor: ["#93C5FD", "#3B82F6", "#1D4ED8", "#93C5FD"],
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: Infinity,
+                  ease: "linear",
+                }}
+              />
+              <motion.div
+                className="w-16 h-16 border-4 border-transparent border-t-blue-500 rounded-full absolute top-0"
+                animate={{
+                  rotate: -360,
+                }}
+                transition={{
+                  duration: 1.5,
+                  repeat: Infinity,
+                  ease: "linear",
+                }}
+              />
+            </div>
+            
+            {/* Brain Animation */}
+            <motion.div
+              className="mt-8 text-4xl text-blue-600"
+              animate={{
+                scale: [1, 1.1, 1],
+                opacity: [0.5, 1, 0.5],
+              }}
+              transition={{
+                duration: 2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            >
+              🧠
+            </motion.div>
+
+            {/* Loading Message */}
+            <div className="mt-6 text-center">
+              <motion.h3
+                className="text-lg font-semibold text-blue-800 mb-2"
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity }}
+              >
+                {loadingMessage}
+              </motion.h3>
+              
+              {/* Animated Quote */}
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={currentQuoteIndex}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.5 }}
+                  className="text-sm text-blue-600 max-w-sm mx-auto"
+                >
+                  {loadingQuotes[currentQuoteIndex]}
+                </motion.p>
+              </AnimatePresence>
+            </div>
+
+            {/* Progress Dots */}
+            <div className="flex gap-2 mt-6">
+              {[0, 1, 2].map((i) => (
+                <motion.div
+                  key={i}
+                  className="w-2 h-2 bg-blue-600 rounded-full"
+                  animate={{
+                    scale: [1, 1.5, 1],
+                    opacity: [0.3, 1, 0.3],
+                  }}
+                  transition={{
+                    duration: 1,
+                    repeat: Infinity,
+                    delay: i * 0.2,
+                  }}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -621,7 +878,7 @@ const ProfileForm = () => {
                 </motion.div>
               )}
 
-              {/* Step 2: Career Goals */}
+              {/* Step 2: Career Goals with Quiz */}
               {step === 2 && (
                 <motion.div
                   variants={containerVariants}
@@ -651,6 +908,44 @@ const ProfileForm = () => {
                     </div>
                   </motion.div>
 
+                  {/* Career Assessment Quiz */}
+                  <motion.div
+                    variants={itemVariants}
+                    className="space-y-4 mt-6"
+                  >
+                    <div className="flex items-center gap-2 text-blue-800 font-medium">
+                      <RiQuestionLine className="text-xl text-blue-600" /> Career Interest Assessment
+                    </div>
+                    <p className="text-sm text-blue-700">
+                      Please answer at least 5 questions to help us personalize your learning paths.
+                      <span className="ml-1 font-medium">({Object.keys(formData.quizAnswers).length}/10 answered)</span>
+                    </p>
+
+                    <div className="space-y-8 max-h-[400px] overflow-y-auto pr-2 py-2">
+                      {careerQuiz.map((question) => (
+                        <div key={question.id} className="bg-blue-50 p-4 rounded-xl">
+                          <p className="font-medium text-blue-900 mb-3">
+                            Q{question.id}. {question.question}
+                          </p>
+                          <div className="space-y-2">
+                            {question.options.map((option, index) => (
+                              <div key={index} 
+                                onClick={() => handleQuizAnswer(question.id, option)}
+                                className={`p-3 rounded-lg cursor-pointer transition-colors ${
+                                  formData.quizAnswers[question.id] === option.charAt(0)
+                                    ? "bg-blue-200 border-2 border-blue-400"
+                                    : "bg-white hover:bg-blue-100"
+                                }`}
+                              >
+                                <p className="text-sm">{option}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+
                   <motion.div
                     variants={itemVariants}
                     className="bg-blue-50 p-4 rounded-xl border-l-4 border-blue-500"
@@ -659,7 +954,7 @@ const ProfileForm = () => {
                       <RiLightbulbLine className="text-xl text-blue-600" /> Tip
                     </div>
                     <p className="text-sm text-blue-800 mt-1">
-                      Be specific about your career goals and timeline. This helps us recommend the right learning paths.
+                      Be specific about your career goals and answer the quiz questions to help us recommend the right learning paths for you.
                     </p>
                   </motion.div>
                 </motion.div>
@@ -902,7 +1197,7 @@ const ProfileForm = () => {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                           </svg>
-                          Processing...
+                          {loadingMessage}
                         </>
                       ) : profileExists ? (
                         <>Update Profile <RiArrowRightLine /></>
