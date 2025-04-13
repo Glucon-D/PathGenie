@@ -1,349 +1,231 @@
-import React, { useState, useEffect } from 'react';
+// /pages/CareerSummary.jsx
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import {
-  RiCheckboxCircleFill,
-  RiDownloadLine,
-  RiHome2Line,
-  RiCodeLine,
-  RiBookOpenLine,
-  RiUserStarLine,
-  RiRocketLine,
-  RiArrowRightLine,
-  RiTimer2Line,
-  RiBrainLine,
-  RiAlertLine
-} from 'react-icons/ri';
-import NudgeCard from '../components/NudgeCard';
+import { RiArrowRightLine, RiDownloadLine, RiUserStarLine, RiCheckboxCircleFill } from 'react-icons/ri';
+import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { account } from "../config/appwrite";
 import { databases } from "../config/database";
-import { Query } from "appwrite";
-import { toast } from "react-hot-toast";
+import { generateCareerSummary } from "../config/gemini";
+import { Query } from 'appwrite';
+import { toast } from 'react-hot-toast';
+import html2pdf from 'html2pdf.js';
+
+const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
+const USERS_COLLECTION_ID = import.meta.env.VITE_USERS_COLLECTION_ID;
+const CAREER_PATHS_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
+const ASSESSMENTS_COLLECTION_ID = import.meta.env.VITE_ASSESSMENTS_COLLECTION_ID;
+
+const normalizeCareerName = (name) => {
+  return name?.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
+};
+
+const COLORS = ['#3b82f6', '#e5e7eb'];
 
 const CareerSummary = () => {
   const navigate = useNavigate();
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
-  const [summaryData, setSummaryData] = useState({
-    userName: '',
-    careerGoal: '',
-    readiness: 0,
-    completedModules: 0,
-    totalModules: 0,
-    timeSpent: 0,
-    completionDate: new Date().toLocaleDateString(),
-    skills: [],
-    suggestions: []
-  });
-  
-  // Get environment variables for Appwrite database and collections
-  const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
-  const CAREER_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
-  const USERS_COLLECTION_ID = import.meta.env.VITE_USERS_COLLECTION_ID;
+  const [loading, setLoading] = useState(true);
+  const [careerSummaries, setCareerSummaries] = useState([]);
+  const refs = useRef([]);
 
   useEffect(() => {
-    fetchCareerData();
+    fetchAllCareerSummaries();
   }, []);
 
-  const fetchCareerData = async () => {
+  const fetchAllCareerSummaries = async () => {
     try {
-      setIsLoading(true);
-      
-      // Get current user
-      const currentUser = await account.get();
-      
-      // Get user data from users collection
-      const usersResponse = await databases.listDocuments(
-        DATABASE_ID,
-        USERS_COLLECTION_ID,
-        [Query.equal("userID", currentUser.$id)]
-      );
+      setLoading(true);
+      const user = await account.get();
 
-      let userData = null;
-      if (usersResponse.documents.length > 0) {
-        userData = usersResponse.documents[0];
-      }
-      
-      // Get career path data with 100% completion
-      const careerResponse = await databases.listDocuments(
-        DATABASE_ID,
-        CAREER_COLLECTION_ID,
-        [
-          Query.equal("userID", currentUser.$id),
-          Query.equal("progress", 100)
-        ]
-      );
-      
-      if (careerResponse.documents.length > 0 && userData) {
-        const careerPath = careerResponse.documents[0];
-        
-        // Parse JSON string fields
-        const modules = careerPath.modules ? JSON.parse(careerPath.modules) : [];
-        const aiNudges = careerPath.aiNudges ? JSON.parse(careerPath.aiNudges) : [];
-        const completedModules = careerPath.completedModules ? JSON.parse(careerPath.completedModules) : [];
-        const recommendedSkills = careerPath.recommendedSkills ? JSON.parse(careerPath.recommendedSkills) : [];
-        
-        // Parse user skills
-        const userSkills = userData.skills ? JSON.parse(userData.skills) : [];
-        
-        // Create skills array with progress level
-        const skillsWithProgress = recommendedSkills.map(skill => {
-          // Check if user has this skill already
-          const hasSkill = userSkills.includes(skill);
-          return {
-            name: skill,
-            level: hasSkill ? 'Advanced' : 'Mastered',
-            progress: hasSkill ? 95 : 90
-          };
-        });
-        
-        // Add any user skills not in recommended skills
-        userSkills.forEach(skill => {
-          if (!recommendedSkills.includes(skill)) {
-            skillsWithProgress.push({
-              name: skill,
-              level: 'Intermediate',
-              progress: 75
-            });
+      const [userRes, pathsRes, assessmentsRes] = await Promise.all([
+        databases.listDocuments(DATABASE_ID, USERS_COLLECTION_ID, [Query.equal("userID", user.$id)]),
+        databases.listDocuments(DATABASE_ID, CAREER_PATHS_COLLECTION_ID, [Query.equal("userID", user.$id)]),
+        databases.listDocuments(DATABASE_ID, ASSESSMENTS_COLLECTION_ID, [Query.equal("userID", user.$id)])
+      ]);
+
+      const userDoc = userRes.documents[0];
+      const assessments = assessmentsRes.documents.map((a) => ({
+        moduleID: a.moduleID,
+        moduleName: a.moduleName || `Module ${a.moduleID}`,
+        score: a.score,
+        feedback: a.feedback
+      }));
+
+      const parsedUser = {
+        ...userDoc,
+        interests: JSON.parse(userDoc.interests || "[]"),
+        skills: JSON.parse(userDoc.skills || "[]")
+      };
+
+      const normalizedGoal = normalizeCareerName(userDoc.careerGoal);
+      const nameMap = new Map();
+
+      const paths = pathsRes.documents.map(path => ({
+        ...path,
+        modules: JSON.parse(path.modules || "[]"),
+        completedModules: JSON.parse(path.completedModules || "[]"),
+        recommendedSkills: JSON.parse(path.recommendedSkills || "[]"),
+        aiNudges: JSON.parse(path.aiNudges || "[]")
+      }));
+
+      paths.forEach(path => {
+        const name = normalizeCareerName(path.careerName);
+        if (!name || name === normalizedGoal) return;
+
+        if (!nameMap.has(name)) nameMap.set(name, path);
+        else {
+          const existing = nameMap.get(name);
+          if ((path.modules?.length || 0) > (existing.modules?.length || 0) || path.progress > existing.progress) {
+            nameMap.set(name, path);
           }
+        }
+      });
+
+      const keptPaths = Array.from(nameMap.values());
+
+      const allSummaries = await Promise.all(keptPaths.map(async (career, idx) => {
+        const summary = await generateCareerSummary({
+          user: parsedUser,
+          careerPath: career,
+          assessments
         });
-        
-        // Calculate time spent (assume 2 hours per module)
-        const timeSpentHours = completedModules.length * 2;
-        
-        setSummaryData({
-          userName: userData.name || currentUser.name || 'Learner',
-          careerGoal: careerPath.careerName || 'Career Path',
-          readiness: careerPath.progress || 100,
-          completedModules: completedModules.length,
-          totalModules: modules.length,
-          timeSpent: timeSpentHours,
-          completionDate: careerPath.updatedAt ? new Date(careerPath.updatedAt).toLocaleDateString() : new Date().toLocaleDateString(),
-          skills: skillsWithProgress,
-          suggestions: aiNudges.length > 0 ? aiNudges : [
-            'Consider diving deeper into backend architecture to complement your frontend skills',
-            'Practice system design concepts to prepare for senior developer roles',
-            'Build a full-stack project to showcase your skills'
-          ]
-        });
-      } else {
-        setHasError(true);
-        toast.error("No completed career path found");
-      }
-    } catch (error) {
-      console.error("Error fetching career summary data:", error);
-      setHasError(true);
-      toast.error("Failed to load career summary");
+
+        return {
+          ref: React.createRef(),
+          data: {
+            name: parsedUser.name,
+            goal: career.careerName,
+            progress: career.progress,
+            completed: career.completedModules.length,
+            total: career.modules.length
+          },
+          summaryText: summary
+        };
+      }));
+
+      refs.current = allSummaries.map((s) => s.ref);
+      setCareerSummaries(allSummaries);
+    } catch (err) {
+      toast.error("Failed to load summaries");
+      console.error("Error fetching summaries:", err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
-  };
-  
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        when: "beforeChildren",
-        staggerChildren: 0.1,
-        delayChildren: 0.3
-      }
-    }
-  };
-  
-  const itemVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
   };
 
-  const handleDownloadReport = () => {
-    // In a real app, this would generate and download a PDF report
-    toast.success('Report download initiated!');
+  const handleDownload = async (ref, fileName) => {
+    if (!ref.current) return toast.error("Nothing to download!");
+    try {
+      toast.loading("Preparing PDF...");
+      await html2pdf().set({
+        margin: 0.5,
+        filename: fileName,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      }).from(ref.current).save();
+      toast.dismiss();
+      toast.success("PDF downloaded!");
+    } catch (err) {
+      toast.dismiss();
+      toast.error("Failed to generate PDF");
+    }
   };
-  
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center">
-        <motion.div 
-          className="flex flex-col items-center"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-        >
-          <motion.div 
-            className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full"
-            animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-          />
-          <p className="mt-4 text-blue-800 font-medium">Generating your career summary...</p>
-        </motion.div>
-      </div>
-    );
-  }
-  
-  if (hasError) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-xl p-8 shadow-lg max-w-md text-center">
-          <RiAlertLine className="text-red-500 text-5xl mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-2">No Completed Career Path Found</h2>
-          <p className="text-gray-600 mb-6">
-            It looks like you haven't completed a career path yet. Keep learning and come back when you're done!
-          </p>
-          <button
-            onClick={() => navigate("/learning-path")}
-            className="px-6 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg"
-          >
-            Go to Learning Paths
-          </button>
-        </div>
-      </div>
-    );
+
+  if (loading) {
+    return <div className="h-screen flex items-center justify-center text-blue-600">Generating career summaries...</div>;
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-4 py-12">
-      <motion.div 
-        className="max-w-4xl mx-auto space-y-8"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
-      >
-        {/* Header */}
-        <motion.div 
-          className="bg-gradient-to-br from-sky-500 to-blue-700 rounded-2xl p-8 text-white shadow-xl"
-          variants={itemVariants}
-        >
-          <h1 className="text-3xl font-bold">Career Journey Complete!</h1>
-          <p className="mt-2 text-blue-100">
-            Congratulations {summaryData.userName}! You've completed all requirements for your {summaryData.careerGoal} track.
-          </p>
-          
-          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white/20 backdrop-blur rounded-xl p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-blue-100">
-                <RiCheckboxCircleFill /> Readiness
+    <div className="md:p-6 min-h-screen bg-gradient-to-br from-sky-100 to-blue-100 space-y-10">
+      {careerSummaries.map((summary, index) => {
+        const pieData = [
+          { name: 'Completed', value: summary.data.completed },
+          { name: 'Remaining', value: summary.data.total - summary.data.completed }
+        ];
+
+        return (
+          <motion.div
+            key={index}
+            className="min-w-xs max-w-full mx-auto bg-white rounded-xl shadow-xl p-4 sm:p-5 md:p-6 lg:p-8 space-y-6"
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <div className="space-y-2">
+              <h1 className="text-2xl font-bold text-[#1e40af] flex items-center gap-2">
+                <RiUserStarLine /> Career Summary for {summary.data.goal}
+              </h1>
+              <div className="flex flex-wrap gap-4 text-sm text-[#2563eb]">
+                <span className="flex items-center gap-1"><RiCheckboxCircleFill /> Modules: {summary.data.completed}/{summary.data.total}</span>
+                <span className="flex items-center gap-1">🚀 Progress: {summary.data.progress}%</span>
               </div>
-              <p className="text-2xl font-bold">{summaryData.readiness}%</p>
             </div>
-            
-            <div className="bg-white/20 backdrop-blur rounded-xl p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-blue-100">
-                <RiBookOpenLine /> Modules
+
+            {/* PDF Content */}
+            <div
+              ref={summary.ref}
+              className="summary-container"            >
+              <h2>Career Summary Report for {summary.data.name}</h2>
+              <p><span className="bold-text">Career Goal:</span> {summary.data.goal}</p>
+              <p><span className="bold-text">Modules Completed:</span> {summary.data.completed}/{summary.data.total}</p>
+              <p><span className="bold-text">Overall Progress:</span> {summary.data.progress}%</p>
+              <hr className="my-3" />
+              <div className="flex flex-col items-center justify-center mt-6 mb-4">
+                <div style={{ width: '200px', height: '200px' }}>
+                  <PieChart width={200} height={200}>
+                    <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={60} label>
+                      {pieData.map((entry, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </div>
+
+                <div style={{ marginTop: '10px', textAlign: 'center', fontSize: '14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <div style={{ width: '15px', height: '15px', backgroundColor: COLORS[0], borderRadius: '3px' }}></div>
+                    <span><strong>Completed Modules</strong></span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ width: '15px', height: '15px', backgroundColor: COLORS[1], borderRadius: '3px' }}></div>
+                    <span><strong>Remaining Modules</strong></span>
+                  </div>
+                </div>
               </div>
-              <p className="text-2xl font-bold">{summaryData.completedModules}/{summaryData.totalModules}</p>
+
+
+
+              <hr style={{ margin: "15px 0" }} />
+              {summary.summaryText.split("\n\n").map((block, idx) => {
+                const formatted = block
+                  .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")  // Bold from **text**
+                  .replace(/\n/g, "<br/>");
+
+                return (
+                  <div key={idx} dangerouslySetInnerHTML={{ __html: formatted }} />
+                );
+                <br />
+              })}
             </div>
-            
-            <div className="bg-white/20 backdrop-blur rounded-xl p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-blue-100">
-                <RiTimer2Line /> Time Spent
-              </div>
-              <p className="text-2xl font-bold">{summaryData.timeSpent} hrs</p>
-            </div>
-            
-            <div className="bg-white/20 backdrop-blur rounded-xl p-4">
-              <div className="flex items-center gap-2 text-sm font-medium text-blue-100">
-                <RiCodeLine /> Skills
-              </div>
-              <p className="text-2xl font-bold">{summaryData.skills.length}</p>
-            </div>
-          </div>
-        </motion.div>
-        
-        {/* Skills Mastered */}
-        <motion.div 
-          className="bg-white rounded-2xl p-6 shadow-lg"
-          variants={itemVariants}
-        >
-          <h2 className="text-2xl font-bold text-blue-800 flex items-center gap-2 mb-6">
-            <RiBrainLine className="text-blue-600" /> Skills Mastered
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {summaryData.skills.map((skill, index) => (
-              <motion.div 
-                key={index}
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.2 + (index * 0.1) }}
-                className="bg-blue-50 rounded-xl p-4"
+
+            <div className="flex gap-4 pt-4 justify-center">
+              <button
+                className="px-5 py-2 bg-blue-100 text-blue-700 rounded-lg flex gap-2 items-center"
+                onClick={() => handleDownload(summary.ref, `${summary.data.goal.replace(/\s/g, "_")}_Summary.pdf`)}
               >
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium text-blue-800">{skill.name}</span>
-                  <span className="text-sm bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">
-                    {skill.level}
-                  </span>
-                </div>
-                
-                <div className="w-full h-2 bg-blue-100 rounded-full">
-                  <div 
-                    className="h-2 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
-                    style={{ width: `${skill.progress}%` }}
-                  />
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-        
-        {/* AI Recommendations */}
-        <motion.div 
-          className="bg-white rounded-2xl p-6 shadow-lg"
-          variants={itemVariants}
-        >
-          <h2 className="text-2xl font-bold text-blue-800 flex items-center gap-2 mb-6">
-            <RiRocketLine className="text-blue-600" /> Next Steps
-          </h2>
-          
-          <div className="space-y-4">
-            {summaryData.suggestions.map((suggestion, index) => (
-              <NudgeCard 
-                key={index}
-                text={suggestion}
-                type="recommendation"
-                elevated={true}
-                actionText={index === 0 ? "Explore this path" : undefined}
-                onAction={index === 0 ? () => navigate("/learning-path") : undefined}
-              />
-            ))}
-          </div>
-        </motion.div>
-        
-        {/* Actions */}
-        <motion.div 
-          className="flex flex-col sm:flex-row justify-center gap-4 pt-4"
-          variants={itemVariants}
-        >
-          <motion.button
-            onClick={handleDownloadReport}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="px-8 py-3 bg-blue-100 text-blue-700 rounded-xl font-medium flex items-center justify-center gap-2"
-          >
-            <RiDownloadLine /> Download Report
-          </motion.button>
-          
-          <motion.button
-            onClick={() => navigate("/")}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            className="px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-medium shadow-lg flex items-center justify-center gap-2"
-          >
-            Go to Home <RiArrowRightLine />
-          </motion.button>
-        </motion.div>
-        
-        {/* Certificate Badge */}
-        <motion.div 
-          className="flex justify-center pt-6"
-          variants={itemVariants}
-        >
-          <div className="flex items-center gap-2 text-blue-600 text-sm">
-            <RiUserStarLine className="text-xl" />
-            <span>Certificate issued on {summaryData.completionDate}</span>
-          </div>
-        </motion.div>
-      </motion.div>
+                <RiDownloadLine /> Download PDF
+              </button>
+              <button
+                className="px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg flex gap-2 items-center"
+                onClick={() => navigate("/dashboard")}
+              >
+                Back to Dashboard <RiArrowRightLine />
+              </button>
+            </div>
+          </motion.div>
+        );
+      })}
     </div>
   );
 };

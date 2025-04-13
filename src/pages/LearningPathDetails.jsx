@@ -196,18 +196,13 @@ const LearningPathDetails = () => {
     }
   };
 
-  const generateModuleQuiz = async () => {
+  const handleRedirectToQuiz = () => {
     if (!careerPath?.modules[selectedModuleIndex]) return;
-    try {
-      setLoadingQuiz(true);
-      const moduleTitle = careerPath.modules[selectedModuleIndex].title;
-      const quiz = await generateQuiz(moduleTitle);
-      setQuizData(quiz);
-    } catch (error) {
-      toast.error("Failed to generate quiz");
-    } finally {
-      setLoadingQuiz(false);
-    }
+    
+    const moduleTitle = careerPath.modules[selectedModuleIndex].title;
+    
+    // Navigate to the quiz page with path ID and module index as URL parameters
+    navigate(`/quiz`);
   };
 
   const fetchYoutubeContent = async (searchTerm) => {
@@ -544,67 +539,18 @@ const LearningPathDetails = () => {
                     Knowledge Check
                   </h3>
 
-                  {!quizData && !loadingQuiz && (
-                    <div className="text-center py-4">
-                      <p className="text-gray-600 mb-4">Test your knowledge of this module with a quick quiz.</p>
-                      <button
-                        onClick={generateModuleQuiz}
-                        className="px-4 py-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition-colors flex items-center gap-2 mx-auto"
-                      >
-                        <span>Generate Quiz</span>
-                        <RiArrowRightLine />
-                      </button>
-                    </div>
-                  )}
+                  <div className="text-center py-4">
+                    <p className="text-gray-600 mb-4">Test your knowledge of this module with a quick quiz.</p>
+                    <button
+                      onClick={handleRedirectToQuiz}
+                      className="px-4 py-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg transition-colors flex items-center gap-2 mx-auto"
+                    >
+                      <span>Take Quiz</span>
+                      <RiArrowRightLine />
+                    </button>
+                  </div>
 
-                  {loadingQuiz && (
-                    <div className="flex flex-col items-center justify-center py-8">
-                      <motion.div
-                        animate={{ rotate: 360 }}
-                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                        className="w-8 h-8 border-3 border-blue-100 border-t-blue-500 rounded-full mb-4"
-                      />
-                      <p className="text-blue-600">Generating quiz questions...</p>
-                    </div>
-                  )}
-
-                  {quizData && (
-                    <div className="space-y-6">
-                      {quizData.questions?.map((question, qIndex) => (
-                        <div key={qIndex} className="border border-blue-100 rounded-lg p-4 bg-blue-50/50">
-                          <p className="font-medium text-gray-800 mb-3">
-                            {qIndex + 1}. {question.question}
-                          </p>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
-                            {question.options.map((option, oIndex) => (
-                              <div
-                                key={oIndex}
-                                className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200 hover:border-blue-300 cursor-pointer"
-                              >
-                                <input
-                                  type="radio"
-                                  name={`question-${qIndex}`}
-                                  id={`q${qIndex}-o${oIndex}`}
-                                  className="text-blue-500 focus:ring-blue-500"
-                                />
-                                <label
-                                  htmlFor={`q${qIndex}-o${oIndex}`}
-                                  className="flex-1 cursor-pointer"
-                                >
-                                  {option}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                      <div className="flex justify-end">
-                        <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-                          Submit Answers
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                  {/* Remove the loading and quiz data sections since we're redirecting instead */}
                 </div>
 
                 {/* Navigation Buttons */}
