@@ -758,7 +758,11 @@ export const generatePersonalizedCareerPaths = async (userData) => {
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    // Use the faster Flash model instead of Pro for quicker responses
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    // Analyze quiz answers to determine career interests
+    const quizAnalysis = analyzeQuizAnswers(userData.quizAnswers || {});
     
     const prompt = `
     Create 4 highly personalized career/learning paths for a user with the following profile:
@@ -769,9 +773,18 @@ export const generatePersonalizedCareerPaths = async (userData) => {
     Current Skills: ${JSON.stringify(userData.skills || [])}
     Interests: ${JSON.stringify(userData.interests || [])}
     
+    --- Quiz Analysis ---
+    ${quizAnalysis ? `Career Interest Areas:
+    Technical Interest: ${quizAnalysis.technical}%
+    Creative Interest: ${quizAnalysis.creative}%
+    Business Interest: ${quizAnalysis.business}%
+    Performance Interest: ${quizAnalysis.performance}%
+    Service Interest: ${quizAnalysis.service}%` : 'No quiz data provided'}
+    -------------------
+    
     For each career path:
-    1. Give it a specific, personalized name that aligns with their career goal and interests
-    2. Create between 5-8 modules (fewer for simpler topics, more for complex ones)
+    1. Give it a specific, personalized name that aligns with their career goal, interests, and quiz results
+    2. Create exactly 5 focused modules for each path
     3. Make each module build logically on the previous ones
     4. Tailor the content to leverage their existing skills and knowledge
     5. Each career path should have a clear end goal that helps them progress toward their stated career objective
@@ -797,22 +810,40 @@ export const generatePersonalizedCareerPaths = async (userData) => {
       // 3 more paths...
     ]
     
-    Make sure the career paths are varied but all relevant to their profile. Paths should leverage their existing skills but push them toward their stated career goal. Module count should vary based on topic complexity.
+    Make sure the career paths are varied but all relevant to their profile. Paths should leverage their existing skills but push them toward their stated career goal.
+    STRICTLY use 5 modules per path for consistency. Be concise and practical in the module descriptions.
     `;
 
-    const result = await retry(() => model.generateContent(prompt));
+    // Use Promise.race with a timeout to handle potentially slow responses
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timed out')), 30000)
+    );
+    
+    const resultPromise = retry(() => model.generateContent(prompt));
+    const result = await Promise.race([resultPromise, timeoutPromise]);
+    
     const text = result.response.text();
     
     try {
       const cleanText = sanitizeJSON(text);
       const careerPaths = JSON.parse(cleanText);
       
-      if (!Array.isArray(careerPaths) || careerPaths.length !== 4) {
+      if (!Array.isArray(careerPaths) || careerPaths.length === 0) {
         throw new Error("Invalid career paths format");
       }
       
+      // Normalize to exactly 4 paths
+      const normalizedPaths = careerPaths.slice(0, 4);
+      while (normalizedPaths.length < 4) {
+        // Clone and modify an existing path if we need more
+        const basePath = {...normalizedPaths[0]};
+        basePath.pathName = `Alternative ${basePath.pathName}`;
+        basePath.relevanceScore = Math.max(1, (basePath.relevanceScore || 80) - 10);
+        normalizedPaths.push(basePath);
+      }
+      
       // Validate and clean up each career path
-      return careerPaths.map(path => ({
+      return normalizedPaths.map(path => ({
         pathName: path.pathName || "Career Path",
         description: path.description || `A learning path toward ${userData.careerGoal}`,
         difficulty: ["beginner", "intermediate", "advanced"].includes(path.difficulty) ? 
@@ -821,7 +852,7 @@ export const generatePersonalizedCareerPaths = async (userData) => {
         relevanceScore: typeof path.relevanceScore === 'number' ? 
           Math.max(0, Math.min(100, path.relevanceScore)) : 85,
         modules: Array.isArray(path.modules) ? 
-          path.modules.map((module, idx) => ({
+          path.modules.slice(0, 5).map((module, idx) => ({
             title: module.title || `Module ${idx + 1}`,
             description: module.description || "Learn important skills in this area",
             estimatedHours: typeof module.estimatedHours === 'number' ? module.estimatedHours : 8,
@@ -832,27 +863,295 @@ export const generatePersonalizedCareerPaths = async (userData) => {
     } catch (error) {
       console.error("Career path parsing error:", error);
       
-      // Generate fallback career paths
-      return generateFallbackCareerPaths(userData);
+      // Generate fallback career paths based on quiz analysis and user data
+      return generateFallbackCareerPaths(userData, quizAnalysis);
     }
   } catch (error) {
     console.error("Error generating personalized career paths:", error);
-    throw error;
+    // Attempt fallback with even simpler approach
+    return simpleFallbackCareerPaths(userData);
   }
 };
 
-// Helper function to generate default modules for fallback
-const generateDefaultModules = (pathName, count) => {
-  return Array.from({ length: count }, (_, i) => ({
-    title: `Module ${i + 1}: ${pathName} Fundamentals ${i + 1}`,
-    description: `Learn essential concepts and skills related to ${pathName}`,
-    estimatedHours: 8,
-    keySkills: []
-  }));
+// Helper function to analyze quiz answers
+const analyzeQuizAnswers = (quizAnswers) => {
+  if (!quizAnswers || Object.keys(quizAnswers).length === 0) {
+    return null;
+  }
+  
+  // Initialize interest area counters
+  const interests = {
+    technical: 0,  // A answers
+    creative: 0,   // B answers
+    business: 0,   // C answers
+    performance: 0, // D answers
+    service: 0     // E answers
+  };
+  
+  // Count answers by type
+  Object.values(quizAnswers).forEach(answer => {
+    if (answer === 'A') interests.technical++;
+    else if (answer === 'B') interests.creative++;
+    else if (answer === 'C') interests.business++;
+    else if (answer === 'D') interests.performance++;
+    else if (answer === 'E') interests.service++;
+  });
+  
+  // Calculate percentages 
+  const totalAnswers = Object.keys(quizAnswers).length;
+  
+  return {
+    technical: Math.round((interests.technical / totalAnswers) * 100),
+    creative: Math.round((interests.creative / totalAnswers) * 100),
+    business: Math.round((interests.business / totalAnswers) * 100),
+    performance: Math.round((interests.performance / totalAnswers) * 100),
+    service: Math.round((interests.service / totalAnswers) * 100)
+  };
 };
 
-// Generate fallback career paths if the API fails
-const generateFallbackCareerPaths = (userData) => {
+// Generate fallback career paths using quiz data
+const generateFallbackCareerPaths = (userData, quizAnalysis) => {
+  const goal = userData.careerGoal || "tech career";
+  const interests = userData.interests || ["programming", "technology"];
+  const skills = userData.skills || ["basic coding"];
+  
+  // Use quiz analysis if available to improve fallback paths
+  if (quizAnalysis) {
+    // Find the top two interest areas
+    const interestAreas = Object.entries(quizAnalysis)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(entry => entry[0]);
+    
+    const pathThemes = {
+      technical: {
+        name: "Technical Development",
+        description: "Building technical skills through hands-on projects",
+        modules: [
+          "Module 1: Core Technical Foundations",
+          "Module 2: Programming Fundamentals",
+          "Module 3: Building Your First Project",
+          "Module 4: Advanced Technical Skills",
+          "Module 5: Technical Portfolio Development"
+        ]
+      },
+      creative: {
+        name: "Creative Expression",
+        description: "Combining creativity with technical skills",
+        modules: [
+          "Module 1: Creative Thinking Principles",
+          "Module 2: Design and Expression Fundamentals",
+          "Module 3: Creative Tools Mastery",
+          "Module 4: Building a Creative Portfolio",
+          "Module 5: Launching Your Creative Project"
+        ]
+      },
+      business: {
+        name: "Business and Entrepreneurship",
+        description: "Developing business acumen and leadership skills",
+        modules: [
+          "Module 1: Business Fundamentals",
+          "Module 2: Market Analysis and Strategy",
+          "Module 3: Financial Planning and Management",
+          "Module 4: Leadership and Team Building",
+          "Module 5: Business Plan Development"
+        ]
+      },
+      performance: {
+        name: "Performance and Presentation",
+        description: "Mastering presentation and performance skills",
+        modules: [
+          "Module 1: Communication Fundamentals",
+          "Module 2: Presentation Skills Development",
+          "Module 3: Audience Engagement Techniques",
+          "Module 4: Performance Optimization",
+          "Module 5: Capstone Performance Project"
+        ]
+      },
+      service: {
+        name: "Community Impact and Service",
+        description: "Making a positive impact through service and leadership",
+        modules: [
+          "Module 1: Understanding Community Needs",
+          "Module 2: Service Leadership Principles",
+          "Module 3: Project Planning for Impact",
+          "Module 4: Building Sustainable Solutions",
+          "Module 5: Measuring and Scaling Impact"
+        ]
+      }
+    };
+    
+    // Create paths based on top interests from quiz
+    return [
+      {
+        pathName: `${goal} through ${pathThemes[interestAreas[0]].name}`,
+        description: `Achieve your goal in ${goal} by focusing on ${pathThemes[interestAreas[0]].description}`,
+        difficulty: "beginner",
+        estimatedTimeToComplete: "3 months",
+        relevanceScore: 90,
+        modules: pathThemes[interestAreas[0]].modules.map((title, i) => ({
+          title,
+          description: `Step ${i+1} in mastering ${interestAreas[0]} skills related to ${goal}`,
+          estimatedHours: 8,
+          keySkills: [...skills.slice(0, 2), `${interestAreas[0]} skills`]
+        }))
+      },
+      {
+        pathName: `${interestAreas[1]} Approach to ${goal}`,
+        description: `A ${interestAreas[1]}-focused pathway to achieving your ${goal}`,
+        difficulty: "intermediate",
+        estimatedTimeToComplete: "4 months",
+        relevanceScore: 85,
+        modules: pathThemes[interestAreas[1]].modules.map((title, i) => ({
+          title,
+          description: `Step ${i+1} in developing ${interestAreas[1]} expertise for your ${goal}`,
+          estimatedHours: 10,
+          keySkills: [...skills.slice(0, 2), `${interestAreas[1]} skills`]
+        }))
+      },
+      {
+        pathName: `${interests[0] || "Core"} Specialization`,
+        description: `Deepen your knowledge in ${interests[0] || "your area of interest"} to excel in ${goal}`,
+        difficulty: "intermediate", 
+        estimatedTimeToComplete: "3 months",
+        relevanceScore: 80,
+        modules: generateDefaultModules(`${interests[0] || "Core"} Specialization`, 5)
+      },
+      {
+        pathName: `Practical ${goal} Projects`,
+        description: `Hands-on project work to build real-world experience in ${goal}`,
+        difficulty: "advanced",
+        estimatedTimeToComplete: "4 months",
+        relevanceScore: 75,
+        modules: [
+          {
+            title: "Module 1: Project Planning and Requirements",
+            description: "Learn how to plan and scope your projects effectively",
+            estimatedHours: 8,
+            keySkills: ["Planning", "Requirements analysis"]
+          },
+          {
+            title: "Module 2: Design and Architecture",
+            description: "Develop the architecture for your projects",
+            estimatedHours: 12,
+            keySkills: ["Design thinking", "Architecture"]
+          },
+          {
+            title: "Module 3: Implementation and Development",
+            description: "Build your projects using best practices",
+            estimatedHours: 15,
+            keySkills: ["Development", "Testing"]
+          },
+          {
+            title: "Module 4: Testing and Quality Assurance",
+            description: "Ensure your projects meet quality standards",
+            estimatedHours: 10,
+            keySkills: ["Quality assurance", "Testing methodologies"]
+          },
+          {
+            title: "Module 5: Deployment and Presentation",
+            description: "Launch your projects and present your work",
+            estimatedHours: 8,
+            keySkills: ["Deployment", "Presentation"]
+          }
+        ]
+      }
+    ];
+  } else {
+    // Return the original fallback paths if no quiz data
+    return generateDefaultFallbackPaths(userData);
+  }
+};
+
+// Simplified fallback for extreme cases
+const simpleFallbackCareerPaths = (userData) => {
+  const goal = userData.careerGoal || "Career Development";
+  
+  return [
+    {
+      pathName: `Getting Started with ${goal}`,
+      description: `Fundamental path to begin your journey in ${goal}`,
+      difficulty: "beginner",
+      estimatedTimeToComplete: "2 months",
+      relevanceScore: 95,
+      modules: [
+        {
+          title: "Module 1: Understanding the Basics",
+          description: "Learn core concepts and terminology",
+          estimatedHours: 6,
+          keySkills: ["Fundamentals", "Terminology"]
+        },
+        {
+          title: "Module 2: Essential Skills Development",
+          description: "Build the must-have skills for this field",
+          estimatedHours: 8,
+          keySkills: ["Core skills", "Practical basics"]
+        },
+        {
+          title: "Module 3: Your First Project",
+          description: "Apply what you've learned in a simple project",
+          estimatedHours: 10,
+          keySkills: ["Project work", "Application"]
+        },
+        {
+          title: "Module 4: Problem-Solving Techniques",
+          description: "Learn to overcome common challenges",
+          estimatedHours: 8,
+          keySkills: ["Problem solving", "Troubleshooting"]
+        },
+        {
+          title: "Module 5: Next Steps and Growth",
+          description: "Plan your continued learning journey",
+          estimatedHours: 6,
+          keySkills: ["Career planning", "Continuous learning"]
+        }
+      ]
+    },
+    // ...three more simplified paths with the same pattern but different focuses/titles
+    {
+      pathName: `Intermediate ${goal}`,
+      description: `Build on your existing knowledge to advance in ${goal}`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 85,
+      modules: Array(5).fill(null).map((_, i) => ({
+        title: `Module ${i+1}: Intermediate Topic ${i+1}`,
+        description: `Deepen your understanding of important concepts`,
+        estimatedHours: 8 + i,
+        keySkills: ["Advanced understanding", "Implementation skills"]
+      }))
+    },
+    {
+      pathName: `${goal} Specialization`,
+      description: `Focus on specialized areas within ${goal}`,
+      difficulty: "advanced",
+      estimatedTimeToComplete: "4 months",
+      relevanceScore: 80,
+      modules: Array(5).fill(null).map((_, i) => ({
+        title: `Module ${i+1}: Specialization Area ${i+1}`,
+        description: `Master specialized techniques and approaches`,
+        estimatedHours: 10 + i,
+        keySkills: ["Specialization", "Expert techniques"]
+      }))
+    },
+    {
+      pathName: `Practical ${goal} Applications`,
+      description: `Apply your knowledge in real-world scenarios`,
+      difficulty: "intermediate",
+      estimatedTimeToComplete: "3 months",
+      relevanceScore: 75,
+      modules: Array(5).fill(null).map((_, i) => ({
+        title: `Module ${i+1}: Real-world Application ${i+1}`,
+        description: `Learn how to apply concepts in practical situations`,
+        estimatedHours: 9 + i,
+        keySkills: ["Practical application", "Real-world skills"]
+      }))
+    }
+  ];
+};
+
+// Original fallback function renamed
+const generateDefaultFallbackPaths = (userData) => {
   const goal = userData.careerGoal || "tech career";
   const interests = userData.interests || ["programming", "technology"];
   const skills = userData.skills || ["basic coding"];
@@ -872,7 +1171,7 @@ const generateFallbackCareerPaths = (userData) => {
       difficulty: "intermediate",
       estimatedTimeToComplete: "4 months",
       relevanceScore: 85,
-      modules: generateDefaultModules(`${interests[0] || "Tech"} Specialization`, 6)
+      modules: generateDefaultModules(`${interests[0] || "Tech"} Specialization`, 5)
     },
     {
       pathName: `${skills[0] || "Coding"} Mastery`,
@@ -880,7 +1179,7 @@ const generateFallbackCareerPaths = (userData) => {
       difficulty: "advanced",
       estimatedTimeToComplete: "5 months",
       relevanceScore: 80,
-      modules: generateDefaultModules(`${skills[0] || "Coding"} Mastery`, 7)
+      modules: generateDefaultModules(`${skills[0] || "Coding"} Mastery`, 5)
     },
     {
       pathName: `Practical ${goal} Projects`,
