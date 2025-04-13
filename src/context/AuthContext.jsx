@@ -35,15 +35,23 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     setLoading(true);
     try {
-      const session = await account.createEmailPasswordSession(email, password);
-      if (session) {
-        const userData = await account.get();
-        setUser(userData);
-        setLoading(false);
-        navigate('/dashboard', { replace: true });
-        return userData;
+      // First, check if there's an active session
+      try {
+        await account.get();
+        // If we get here, there's an active session, so delete it first
+        await account.deleteSession('current');
+      } catch (error) {
+        // No active session, continue with login
+        console.log('No active session found');
       }
-      throw new Error('Session creation failed');
+
+      // Now proceed with login
+      const session = await account.createEmailPasswordSession(email, password);
+      const userData = await account.get();
+      setUser(userData);
+      setLoading(false);
+      navigate('/dashboard', { replace: true });
+      return userData;
     } catch (error) {
       setLoading(false);
       console.error('Login error:', error);
