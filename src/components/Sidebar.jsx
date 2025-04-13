@@ -50,12 +50,12 @@ const Sidebar = ({ isOpen, setIsOpen }) => {
       path: "/quiz",
       active: location.pathname.includes("quiz"),
     },
-    {
-      icon: <RiLineChartLine className="text-xl" />,
-      label: "Progress",
-      path: "/progress",
-      active: location.pathname.includes("progress"),
-    },
+    // {
+    //   icon: <RiLineChartLine className="text-xl" />,
+    //   label: "Progress",
+    //   path: "/progress",
+    //   active: location.pathname.includes("progress"),
+    // },
     {
       icon: <RiAwardLine className="text-xl" />,
       label: "Career Summary",
