@@ -264,30 +264,7 @@ const Quiz = () => {
     setSelectedModule("all");
   };
 
-  const extractModuleContent = (module) => {
-    if (!module) return "";
-
-    let content = [];
-
-    if (module.title) content.push(`${module.title}`);
-    if (module.description) content.push(`${module.description}`);
-
-    if (Array.isArray(module.sections)) {
-      module.sections.forEach((section) => {
-        if (section?.title) content.push(section.title);
-        if (section?.content) content.push(section.content);
-      });
-    } else if (Array.isArray(module.lessons)) {
-      module.lessons.forEach((lesson) => {
-        if (lesson?.title) content.push(lesson.title);
-        if (lesson?.content) content.push(lesson.content);
-      });
-    } else if (module.content) {
-      content.push(module.content);
-    }
-
-    return content.join("\n\n");
-  };
+ 
   const handleGenerateQuiz = async () => {
     if (!topic || numQuestions < 1) {
       alert("Please enter a valid topic and number of questions.");
@@ -368,16 +345,33 @@ const Quiz = () => {
   
       setScore(totalScore);
       const accuracyValue = (
-        (correctCount / quizData.questions.length) *
-        100
+        (correctCount / quizData.questions.length) * 100
       ).toFixed(2);
       setAccuracy(accuracyValue);
   
-      // ✅ Save to assessments collection instead of updating career-paths
+      // ✅ Module title
+      const moduleIndex = parseInt(selectedModule);
+      const moduleTitle =
+        selectedModule === "all"
+          ? "All Modules"
+          : modules[moduleIndex]?.title || `Untitled Module`;
+  
+      // ✅ Career path title
+      const selectedPathObj = paths.find((p) => p.$id === selectedPathId);
+      const careerName = selectedPathObj?.careerName || "Unknown Career";
+  
+      // ✅ Final combined title: e.g. "Frontend Developer - Module 2: HTML Basics"
+      const finalModuleName =
+        selectedModule === "all"
+          ? `${careerName} - All Modules`
+          : `${careerName} - Module ${moduleIndex + 1}: ${moduleTitle}`;
+  
+      // Save to assessments
       const payload = {
         userID: user.$id,
         pathID: selectedPathId,
         moduleID: selectedModule || "all",
+        moduleName: finalModuleName,
         score: totalScore,
         feedback: `Accuracy: ${accuracyValue}%`,
         timestamp: new Date().toISOString(),
@@ -387,20 +381,26 @@ const Quiz = () => {
         .then(() => console.log("✅ Quiz score saved!"))
         .catch((err) => console.error("❌ Error saving quiz result:", err));
     }
-  }, [showResults, quizData, userAnswers, user, selectedPathId]);
+  }, [showResults, quizData, userAnswers, user, selectedPathId, selectedModule, modules, paths]);
+  
+  
   const handleShowResults = async () => {
     setShowResults(true);
   
+    console.log("slectedt module",selectedModule)
     // 🧠 Call only after quiz is finished and results are ready
     try {
       await saveQuizScore({
-        userID: user?.$id,
-        pathID: selectedPathId,            // ⬅️ You should already have this in your state
-        moduleID: selectedModule || "all", // ⬅️ or send actual module id if you store it
-        score: score,                      // ⬅️ Final score from result
-        feedback: `${accuracy}% accuracy`, // ⬅️ Optional summary string
-        timestamp: new Date().toISOString()
+        userID: user.$id,
+        pathID: selectedPathId,
+        moduleID: selectedModule, // ✅ keep it as index (string/number)
+        moduleName: modules[selectedModule]?.title || `Module ${parseInt(selectedModule) + 1} `,
+        score: totalScore,
+        feedback: `Accuracy: ${accuracyValue}%`,
+        timestamp: new Date().toISOString(),
       });
+      
+      
       console.log("✅ Quiz score saved!");
     } catch (err) {
       console.error("❌ Error saving quiz result:", err);

@@ -21,7 +21,7 @@ const Dashboard = () => {
     totalModulesCompleted: 0,
     avgQuizScore: 0
   });
-  
+
   // Get environment variables for Appwrite database and collections
   const DATABASE_ID = import.meta.env.VITE_APPWRITE_DATABASE_ID;
   const CAREER_COLLECTION_ID = import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID;
@@ -44,69 +44,85 @@ const Dashboard = () => {
         setIsLoading(false);
       }
     };
-    
+
     fetchAllUserData();
   }, []);
 
   const fetchRecentActivity = async () => {
     try {
       const user = await account.get();
-      
-      // Fetch recent assessments
+
       const assessmentsResponse = await databases.listDocuments(
         DATABASE_ID,
         ASSESSMENTS_COLLECTION_ID,
         [
           Query.equal("userID", user.$id),
-          Query.orderDesc("completedAt"),
-          Query.limit(5)
+          Query.orderDesc("timestamp"),
+          Query.limit(5),
         ]
       );
-      
-      const activities = assessmentsResponse.documents.map(assessment => ({
-        type: assessment.quizScore ? 'quiz' : 'flashcard',
-        moduleID: assessment.moduleID,
-        moduleName: assessment.moduleName || 'Module',
-        date: assessment.completedAt,
-        score: assessment.quizScore,
-        total: assessment.quizTotal || 10,
-        flashcardsMastered: assessment.flashcardsMastered || 0
-      }));
-      
+
+      const activities = assessmentsResponse.documents
+        .filter((assessment) => assessment.feedback?.includes("Accuracy")) // ✅ Keep only quizzes
+        .map((assessment) => {
+          const accuracyMatch = assessment.feedback?.match(/Accuracy:\s*(\d+(?:\.\d+)?)%/);
+          const accuracy = accuracyMatch ? parseFloat(accuracyMatch[1]) : null;
+
+          return {
+            type: "quiz",
+            moduleID: assessment.moduleID,
+            moduleName: assessment.moduleName || (
+              assessment.moduleID !== "all"
+                ? `Module ${parseInt(assessment.moduleID) + 1}`
+                : "All Modules"
+            ),
+            date: assessment.timestamp,
+            score: assessment.score,
+            total: 10,
+            accuracy,
+            feedback: assessment.feedback || null,
+          };
+        });
+
       setRecentActivity(activities);
-      
+
+
+      setRecentActivity(activities);
     } catch (error) {
-      console.error("Error fetching recent activity:", error);
+      console.error("❌ Error fetching recent activity:", error);
     }
   };
+
+
+
 
   const fetchUserProgress = async () => {
     try {
       const user = await account.get(); // Get logged-in user
-      
+
       // Fetch assessments for this user
       const assessmentsResponse = await databases.listDocuments(
         DATABASE_ID,
         ASSESSMENTS_COLLECTION_ID,
         [Query.equal("userID", user.$id)]
       );
-      
+
       // Calculate flashcard count from assessments
       let totalFlashcardsMastered = 0;
       let quizScoresData = [];
       let totalQuizScore = 0;
       let totalQuizCount = 0;
-      
+
       // Process assessments data
       assessmentsResponse.documents.forEach(assessment => {
         if (assessment.flashcardsMastered) {
           totalFlashcardsMastered += parseInt(assessment.flashcardsMastered);
         }
-        
+
         if (assessment.quizScore) {
           const score = parseInt(assessment.quizScore);
           const total = parseInt(assessment.quizTotal || 10);
-          
+
           // Add quiz data with date and score
           quizScoresData.push({
             moduleID: assessment.moduleID,
@@ -116,7 +132,7 @@ const Dashboard = () => {
             accuracy: ((score / total) * 100).toFixed(1),
             date: assessment.completedAt || new Date().toISOString(),
           });
-          
+
           totalQuizScore += score;
           totalQuizCount += 1;
         }
@@ -124,33 +140,33 @@ const Dashboard = () => {
 
       setFlashcardCount(totalFlashcardsMastered);
       setQuizScores(quizScoresData);
-      
+
       // Update user stats
       setUserStats(prev => ({
         ...prev,
         avgQuizScore: totalQuizCount > 0 ? (totalQuizScore / totalQuizCount).toFixed(1) : 0
       }));
-      
+
       // Calculate streak from quiz dates
       if (quizScoresData.length > 0) {
         const dates = quizScoresData.map(q => new Date(q.date).toDateString());
         const uniqueDates = [...new Set(dates)].sort((a, b) => new Date(b) - new Date(a));
-        
+
         let streak = 0;
         const today = new Date().toDateString();
         const yesterday = new Date(Date.now() - 86400000).toDateString();
-        
+
         if (uniqueDates[0] === today || uniqueDates[0] === yesterday) {
           streak = 1;
           for (let i = 1; i < uniqueDates.length; i++) {
             const dateDiff = Math.round(
-              (new Date(uniqueDates[i-1]) - new Date(uniqueDates[i])) / 86400000
+              (new Date(uniqueDates[i - 1]) - new Date(uniqueDates[i])) / 86400000
             );
             if (dateDiff === 1) streak++;
             else break;
           }
         }
-        
+
         setCurrentStreak(streak);
       }
     } catch (error) {
@@ -162,7 +178,7 @@ const Dashboard = () => {
   const fetchPaths = async () => {
     try {
       const user = await account.get();
-      
+
       // Query career paths collection for this user
       const response = await databases.listDocuments(
         DATABASE_ID,
@@ -180,23 +196,23 @@ const Dashboard = () => {
             completedModules: path.completedModules ? JSON.parse(path.completedModules) : []
           };
         });
-        
+
         // Filtering paths where progress is less than 100
         const incompletePaths = processedPaths.filter(
           (path) => path.progress < 100
         );
-        
+
         const completedPaths = processedPaths.filter(
           (path) => path.progress >= 100
         );
-        
+
         setPaths(incompletePaths);
-        
+
         // Calculate total completed modules
         const totalModulesCompleted = processedPaths.reduce((total, path) => {
           return total + (path.completedModules?.length || 0);
         }, 0);
-        
+
         // Update user stats
         setUserStats(prev => ({
           ...prev,
@@ -227,8 +243,8 @@ const Dashboard = () => {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
@@ -273,29 +289,29 @@ const Dashboard = () => {
   ];
 
   const quickActions = [
-    { 
-      icon: "🎯", 
+    {
+      icon: "🎯",
       label: "New Path",
       description: "Start a learning journey",
       path: "/learning-path",
       gradient: "from-blue-600 to-indigo-600"
     },
-    { 
-      icon: "🗂️", 
+    {
+      icon: "🗂️",
       label: "Flashcards",
       description: "Create study cards",
       path: "/flashcards",
       gradient: "from-indigo-600 to-purple-600"
     },
-    { 
-      icon: "📝", 
+    {
+      icon: "📝",
       label: "Quiz",
       description: "Test your knowledge",
       path: "/quiz",
       gradient: "from-purple-600 to-pink-600"
     },
-    { 
-      icon: "📈", 
+    {
+      icon: "📈",
       label: "Progress",
       description: "Track your growth",
       path: "/progress",
@@ -345,7 +361,7 @@ const Dashboard = () => {
                 )}
               </div>
             </motion.div>
-            
+
             {/* Stats cards */}
             <div className="mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               <div className="bg-white/40 p-4 rounded-xl shadow-sm">
@@ -408,7 +424,7 @@ const Dashboard = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
-                  whileHover={{ 
+                  whileHover={{
                     scale: 1.02,
                     boxShadow: "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)"
                   }}
@@ -512,7 +528,7 @@ const Dashboard = () => {
               <div className="lg:col-span-2">
                 <div className="bg-white/70 backdrop-blur-sm p-6 rounded-2xl border border-white/60 shadow">
                   <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-                    <span className="text-indigo-600">📊</span> Recent Activity
+                    <span className="text-indigo-600">📊</span> Recent Quiz Activity
                   </h2>
                   <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {recentActivity.length > 0 ? (
@@ -523,17 +539,17 @@ const Dashboard = () => {
                               <p className="font-medium text-gray-800">
                                 {activity.type === 'quiz' ? '📝 Quiz' : '🗂️ Flashcards'}
                               </p>
-                              <p className="text-sm text-gray-600">{activity.moduleName}</p>
+                              <p className="text-sm text-gray-600">
+                                {activity.moduleName || "Untitled Module"}
+                              </p>
                             </div>
+
                             {activity.type === 'quiz' && (
-                              <span className="bg-indigo-100 text-indigo-700 text-xs px-2.5 py-1 rounded-full">
-                                {activity.score}/{activity.total}
-                              </span>
-                            )}
-                            {activity.type === 'flashcard' && (
-                              <span className="bg-purple-100 text-purple-700 text-xs px-2.5 py-1 rounded-full">
-                                +{activity.flashcardsMastered}
-                              </span>
+                              <div className="flex flex-col items-end text-right">
+                                <span className="bg-indigo-100 text-center text-indigo-700 text-xs px-2.5 py-1 rounded-full break-words max-w-[120px]">
+                                  {activity.feedback || "No feedback"}
+                                </span>
+                              </div>
                             )}
                           </div>
                           <p className="text-xs text-gray-500 mt-1">{formatDate(activity.date)}</p>
@@ -542,7 +558,9 @@ const Dashboard = () => {
                     ) : (
                       <div className="text-center py-8">
                         <p className="text-gray-500">No activity recorded yet</p>
-                        <p className="text-gray-400 text-sm mt-2">Complete quizzes and flashcards to see your progress</p>
+                        <p className="text-gray-400 text-sm mt-2">
+                          Complete quizzes to see your progress
+                        </p>
                       </div>
                     )}
                   </div>
@@ -552,7 +570,7 @@ const Dashboard = () => {
           </>
         )}
       </motion.div>
-      
+
       {/* Custom scrollbar styles */}
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {
