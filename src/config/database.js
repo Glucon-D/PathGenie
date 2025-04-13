@@ -212,7 +212,7 @@ export const markModuleComplete = async (pathId, moduleIndex) => {
 };
 
 
-export const saveQuizScore = async ({ userID, pathID, moduleID, score, feedback, timestamp }) => {
+export const saveQuizScore = async ({ userID, pathID, moduleID, moduleName, score, feedback, timestamp }) => {
   try {
     const res = await databases.createDocument(
       import.meta.env.VITE_APPWRITE_DATABASE_ID,
@@ -222,10 +222,14 @@ export const saveQuizScore = async ({ userID, pathID, moduleID, score, feedback,
         userID,
         pathID,
         moduleID,
+        moduleName, // ✅ added module title
         score,
         feedback,
         timestamp
       }
+
+      
+
     );
     console.log("✅ Score saved in assessments:", res);
     return res;
