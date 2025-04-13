@@ -1191,3 +1191,126 @@ const generateDefaultFallbackPaths = (userData) => {
     }
   ];
 };
+
+// Function to generate AI nudges
+export const generateAINudges = async (userData, assessmentData = [], pathData = null) => {
+  if (!userData) {
+    return [];
+  }
+
+  try {
+    const prompt = `Generate 3 personalized learning nudges for a student with the following profile:
+    
+    Career Path: ${pathData?.careerName || 'Learning journey'}
+    Progress: ${pathData?.progress || 0}%
+    Recent Assessments: ${assessmentData?.map(a => `Score: ${a.score}, Accuracy: ${a.accuracy}%`).join('; ') || 'No recent assessments'}
+    Completed Modules: ${pathData?.completedModules?.length || 0}
+    
+    Return exactly 3 nudges as a JSON array with this structure:
+    [
+      {
+        "type": "tip" | "recommendation" | "challenge",
+        "text": "The motivational/insightful message",
+        "actionText": "Optional call to action button text", 
+        "icon": "bulb" | "rocket"
+      }
+    ]
+    
+    Make nudges specific to their progress and performance.
+    Keep texts concise (max 150 characters).
+    One nudge should be a "challenge" type.`;
+
+    // Try using groqCompletion first
+    try {
+      const response = await groqCompletion(prompt, "llama3-70b-8192");
+      return JSON.parse(sanitizeJSON(response));
+    } catch (groqError) {
+      console.warn("GROQ failed for nudges, falling back to Gemini:", groqError);
+      
+      // Fallback to Gemini
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const result = await model.generateContent(prompt);
+      const text = result.response.text();
+      return JSON.parse(sanitizeJSON(text));
+    }
+  } catch (error) {
+    console.error("Error generating nudges:", error);
+    return [
+      {
+        type: "tip",
+        text: "Keep learning consistently to maintain your progress!",
+        icon: "bulb"
+      },
+      {
+        type: "recommendation",
+        text: "Review previous modules to reinforce your knowledge.",
+        icon: "bulb"
+      },
+      {
+        type: "challenge",
+        text: "Try completing a quiz with 100% accuracy as your next goal.",
+        icon: "rocket"
+      }
+    ];
+  }
+};
+
+
+
+export const generateCareerSummary = async ({ user, careerPath, assessments }) => {
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+
+    const prompt =
+      `You are PathGenie – an AI career coach and motivational mentor for students on their learning journey.
+    
+    Generate a detailed, emotionally supportive, and strategic career summary report for the following user based on their current learning progress, completed modules, quiz feedback, career goal, and interests.
+    
+    ### Instructions:
+    Write the output as a **personalized narrative**, not a list. Your tone should be **friendly, supportive, and motivating** – like a personal coach who believes in the student and wants them to grow.
+    
+    🔹 The report must include:
+    
+    1. A warm and uplifting **introduction** using the user's name
+    2. A recap of their **progress so far** – modules completed, percentage progress, etc.
+    3. A reflection on their **performance** – quiz scores and strengths you've noticed
+    4. Clear guidance on **areas to improve or skills to focus on next**
+    5. A **vision of their future** – if they keep working at this pace, what can they achieve? What should their next big goal be?
+    6. Your **evaluation of job/internship readiness** – are they ready to apply? What roles suit them now?
+    7. Recommended **next steps or strategies** to speed up progress – projects, certifications, habits, resources
+    8. A strong **motivational message** affirming that they're on the right track and can achieve even more
+    9. End with **3 AI-powered nudges** (short, sharp, practical tips for immediate action)
+    
+    ### User Profile:
+    - Name: ${user.name}
+    - Career Goal: ${careerPath.careerName}
+    - Interests: ${user.interests.join(", ") || "Not specified"}
+    - Skills: ${user.skills.join(", ") || "Not specified"}
+    
+    ### Learning Journey:
+    - Total Modules: ${careerPath.modules.length}
+    - Completed Modules: ${careerPath.completedModules.length}
+    - Overall Progress: ${careerPath.progress}%
+    - Recommended Skills: ${careerPath.recommendedSkills.join(", ") || "None listed"}
+    
+    ### Quiz Assessments:
+    ${assessments.map(a => `- ${a.moduleName}: Scored ${a.score}/10 – ${a.feedback}`).join("\n")}
+    
+    ---
+    
+    Generate the report as if you're speaking directly to the user.
+    
+    Make it natural, inspiring, and rich in value.`;
+
+
+
+    const result = await model.generateContent(prompt);
+    const response = result.response;
+    const text = response.text();
+    return text;
+  } catch (error) {
+    console.error("❌ Gemini Career Summary Error:", error);
+    throw error;
+  }
+};
