@@ -1,16 +1,16 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { RiLightbulbLine, RiRocketLine } from 'react-icons/ri';
+import { RiLightbulbLine, RiRocketLine, RiAwardLine, RiStarLine } from 'react-icons/ri';
 
 /**
- * NudgeCard Component
+ * Enhanced NudgeCard Component
  * 
- * A reusable card component to display AI suggestions/nudges to the user.
+ * A visually appealing card component to display AI suggestions/nudges to the user.
  * 
  * @param {Object} props
  * @param {string} props.text - The suggestion text to display
  * @param {string} props.type - Optional: Type of nudge ("tip", "recommendation", "challenge", defaults to "tip")
- * @param {string} props.icon - Optional: Icon type ("bulb" or "rocket", defaults based on type)
+ * @param {string} props.icon - Optional: Icon type ("bulb", "rocket", "star", defaults based on type)
  * @param {function} props.onAction - Optional: Callback function when action button is clicked
  * @param {string} props.actionText - Optional: Text for the action button
  * @param {boolean} props.elevated - Optional: Whether to use elevated/enhanced styling
@@ -25,68 +25,118 @@ const NudgeCard = ({
 }) => {
   // Determine which icon to show based on type or explicit icon prop
   const getIcon = () => {
-    if (icon === 'rocket') return <RiRocketLine className="text-xl text-blue-600" />;
-    if (icon === 'bulb') return <RiLightbulbLine className="text-xl text-blue-600" />;
+    if (icon === 'rocket') return <RiRocketLine className="text-xl sm:text-2xl" />;
+    if (icon === 'bulb') return <RiLightbulbLine className="text-xl sm:text-2xl" />;
+    if (icon === 'star') return <RiStarLine className="text-xl sm:text-2xl" />;
     
     // Default icons based on type
-    if (type === 'recommendation' || type === 'challenge') {
-      return <RiRocketLine className="text-xl text-blue-600" />;
+    if (type === 'challenge') return <RiRocketLine className="text-xl sm:text-2xl" />;
+    if (type === 'recommendation') return <RiAwardLine className="text-xl sm:text-2xl" />;
+    return <RiLightbulbLine className="text-xl sm:text-2xl" />;
+  };
+
+  // Get background gradient and text color based on type
+  const getStyles = () => {
+    switch(type) {
+      case 'recommendation':
+        return {
+          gradient: 'from-indigo-500/10 to-purple-500/10',
+          iconBg: 'bg-indigo-100',
+          iconColor: 'text-indigo-600',
+          borderColor: 'border-l-indigo-500',
+          hoverBg: 'hover:bg-indigo-50',
+          buttonBg: 'bg-indigo-100 hover:bg-indigo-200',
+          buttonText: 'text-indigo-700'
+        };
+      case 'challenge':
+        return {
+          gradient: 'from-purple-500/10 to-pink-500/10',
+          iconBg: 'bg-purple-100',
+          iconColor: 'text-purple-600',
+          borderColor: 'border-l-purple-500',
+          hoverBg: 'hover:bg-purple-50',
+          buttonBg: 'bg-purple-100 hover:bg-purple-200',
+          buttonText: 'text-purple-700'
+        };
+      default:
+        return {
+          gradient: 'from-blue-500/10 to-sky-500/10',
+          iconBg: 'bg-blue-100',
+          iconColor: 'text-blue-600',
+          borderColor: 'border-l-blue-500',
+          hoverBg: 'hover:bg-blue-50',
+          buttonBg: 'bg-blue-100 hover:bg-blue-200',
+          buttonText: 'text-blue-700'
+        };
     }
-    return <RiLightbulbLine className="text-xl text-blue-600" />;
   };
 
   // Get title based on type
   const getTitle = () => {
     switch(type) {
-      case 'recommendation':
-        return 'Recommendation';
-      case 'challenge':
-        return 'Challenge';
-      default:
-        return 'AI Tip';
+      case 'recommendation': return 'Recommendation';
+      case 'challenge': return 'Challenge';
+      default: return 'AI Tip';
     }
   };
 
-  // Get border color based on type
-  const getBorderColor = () => {
-    switch(type) {
-      case 'recommendation':
-        return 'border-indigo-500';
-      case 'challenge':
-        return 'border-purple-500';
-      default:
-        return 'border-blue-500';
-    }
-  };
+  const styles = getStyles();
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      whileHover={{ scale: 1.02, boxShadow: "0 4px 12px rgba(0,0,0,0.05)" }}
+      transition={{ duration: 0.2 }}
       className={`
-        ${elevated ? 'bg-white shadow-lg' : 'bg-blue-50'} 
+        ${elevated 
+          ? `bg-white shadow-md bg-gradient-to-br ${styles.gradient}` 
+          : 'bg-white/80'
+        } 
         p-4 rounded-xl 
-        ${elevated ? 'border border-blue-100' : `border-l-4 ${getBorderColor()}`}
+        ${elevated 
+          ? 'border border-white/80' 
+          : `border-l-4 ${styles.borderColor}`
+        }
+        transition-all duration-200 ${styles.hoverBg}
       `}
     >
-      <div className="flex items-center gap-2 text-blue-800 font-medium mb-2">
-        {getIcon()}
-        <span>{getTitle()}</span>
+      <div className="flex items-start gap-3">
+        <div className={`${styles.iconBg} p-2 sm:p-3 rounded-lg ${styles.iconColor} flex-shrink-0`}>
+          {getIcon()}
+        </div>
+        
+        <div className="space-y-2">
+          <div className="flex items-center">
+            <h3 className={`font-medium ${styles.iconColor}`}>{getTitle()}</h3>
+            <motion.span 
+              className={`ml-2 inline-block w-1.5 h-1.5 rounded-full ${styles.iconColor} opacity-75`}
+              animate={{ scale: [1, 1.5, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            />
+          </div>
+          
+          <p className="text-sm text-gray-700">{text}</p>
+          
+          {onAction && actionText && (
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onAction}
+              className={`mt-2 text-sm py-1.5 px-3 ${styles.buttonBg} ${styles.buttonText} rounded-lg transition-all duration-200 flex items-center gap-1.5 font-medium`}
+            >
+              {actionText}
+              <motion.span 
+                animate={{ x: [0, 3, 0] }} 
+                transition={{ repeat: Infinity, duration: 1.5 }}
+                className="text-xs"
+              >
+                →
+              </motion.span>
+            </motion.button>
+          )}
+        </div>
       </div>
-      
-      <p className="text-sm text-sky-800">{text}</p>
-      
-      {onAction && actionText && (
-        <motion.button
-          whileHover={{ scale: 1.03 }}
-          whileTap={{ scale: 0.97 }}
-          onClick={onAction}
-          className="mt-3 text-sm py-1.5 px-3 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors inline-flex items-center gap-1"
-        >
-          {actionText}
-        </motion.button>
-      )}
     </motion.div>
   );
 };

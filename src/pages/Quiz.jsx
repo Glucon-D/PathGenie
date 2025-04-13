@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { generateQuiz } from "../config/gemini"; 
+import { generateQuiz, generateAINudges } from "../config/gemini"; 
 import QuizCard from "../components/QuizCard";
+import NudgeCard from "../components/NudgeCard";
 import { useAuth } from "../context/AuthContext";
 import { updateUserProgress, getLearningPaths } from "../config/database";
 import { AiOutlineLeft, AiOutlineRight } from "react-icons/ai";
@@ -27,6 +28,7 @@ const Quiz = () => {
   const [selectedModule, setSelectedModule] = useState(""); // "" instead of "all"
   const [quizContent, setQuizContent] = useState("");
   const { user } = useAuth();
+  const [performanceNudges, setPerformanceNudges] = useState([]);
 
 
   // Get parameters from URL if they exist
@@ -383,7 +385,25 @@ const Quiz = () => {
     }
   }, [showResults, quizData, userAnswers, user, selectedPathId, selectedModule, modules, paths]);
   
-  
+  useEffect(() => {
+    const generatePerformanceNudges = async () => {
+      if (showResults && quizData && user) {
+        try {
+          const nudges = await generateAINudges(
+            user,
+            [{ score: score, accuracy: accuracy }],
+            selectedPath
+          );
+          setPerformanceNudges(nudges);
+        } catch (error) {
+          console.error("Error generating performance nudges:", error);
+        }
+      }
+    };
+    
+    generatePerformanceNudges();
+  }, [showResults, score, accuracy, user, selectedPath, quizData]);
+
   const handleShowResults = async () => {
     setShowResults(true);
   
@@ -652,6 +672,25 @@ const Quiz = () => {
               </div>
             </div>
           </div>
+
+          {/* Performance Nudges */}
+          {showResults && performanceNudges.length > 0 && (
+            <motion.div 
+              className="max-w-4xl mx-auto mb-6 grid grid-cols-1 md:grid-cols-2 gap-4"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              {performanceNudges.map((nudge, index) => (
+                <NudgeCard
+                  key={index}
+                  text={nudge.text}
+                  type={nudge.type}
+                  icon={nudge.icon}
+                  elevated={true}
+                />
+              ))}
+            </motion.div>
+          )}
 
           {/* Detailed Review */}
           <div className="space-y-4 sm:space-y-6">

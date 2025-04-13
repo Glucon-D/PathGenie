@@ -22,6 +22,7 @@ import {
   RiDeleteBin5Line,
   RiCloseLine
 } from 'react-icons/ri';
+import { generateAINudges } from "../config/gemini";
 import NudgeCard from "../components/NudgeCard";
 import { toast } from 'react-hot-toast';
 
@@ -35,6 +36,8 @@ const LearningPath = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [pathToDelete, setPathToDelete] = useState(null);
   const [deletingPath, setDeletingPath] = useState(false);
+  // Add state for path nudges
+  const [pathNudges, setPathNudges] = useState([]);
   
   const navigate = useNavigate();
 
@@ -177,11 +180,32 @@ const LearningPath = () => {
       
       setCareerPaths(processedPaths);
       setError("");
+      
+      // Generate nudges based on the paths
+      await generatePathNudges(processedPaths);
+      
     } catch (error) {
       console.error("Error fetching data:", error);
       setError("Failed to load AI-generated learning paths. Please try again later.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Define the generatePathNudges function before it's used
+  const generatePathNudges = async (paths) => {
+    if (paths.length > 0) {
+      try {
+        const userData = await account.get();
+        const nudges = await generateAINudges(
+          userData,
+          [], // No assessment data needed for path-specific nudges
+          paths[0]
+        );
+        setPathNudges(nudges);
+      } catch (error) {
+        console.error("Error generating path nudges:", error);
+      }
     }
   };
 
@@ -536,6 +560,24 @@ const LearningPath = () => {
                 />
               ))}
             </div>
+          </motion.div>
+        )}
+
+        {/* Add the nudges section after paths grid */}
+        {!loading && pathNudges.length > 0 && (
+          <motion.div
+            variants={item}
+            className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4"
+          >
+            {pathNudges.map((nudge, index) => (
+              <NudgeCard
+                key={index}
+                text={nudge.text}
+                type={nudge.type}
+                icon={nudge.icon}
+                elevated={true}
+              />
+            ))}
           </motion.div>
         )}
       </motion.div>
