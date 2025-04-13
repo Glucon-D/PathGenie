@@ -19,23 +19,21 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import ReactMarkdown from 'react-markdown';
 import Portal from '../components/Portal';
 import rehypeRaw from 'rehype-raw';
-
-const INITIAL_QUESTIONS = [
-  "What topic would you like to discuss today?",
-  "What's your current knowledge level in this topic? (Beginner/Intermediate/Advanced)",
-  "What specific aspects would you like to focus on?"
-];
+import { databases } from '../config/database';
+import { useAuth } from '../context/AuthContext';
+import { Query } from 'appwrite';
 
 const Chat = () => {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [context, setContext] = useState({});
-  const [setupComplete, setSetupComplete] = useState(false);
   const [copiedCode, setCopiedCode] = useState(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const chatEndRef = useRef(null);
+  const { user } = useAuth();
+  const [pathsData, setPathsData] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [isTyping, setIsTyping] = useState(false);
 
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -68,32 +66,30 @@ const Chat = () => {
     setMessages(prev => [...prev, userMessage]);
     setInput('');
     setLoading(true);
+    setIsTyping(true);
 
     try {
-      if (!setupComplete) {
-        // Handle setup questions
-        setContext(prev => ({
-          ...prev,
-          [INITIAL_QUESTIONS[currentQuestion]]: input
-        }));
+      // Create enhanced context with learning paths
+      const context = {
+        paths: pathsData?.map(path => ({
+          name: path.careerName,
+          modules: JSON.parse(path.modules),
+          progress: path.progress,
+          completedModules: JSON.parse(path.completedModules)
+        })) || [],
+        currentGoals: pathsData?.[0]?.careerName || "career development",
+      };
 
-        if (currentQuestion < INITIAL_QUESTIONS.length - 1) {
-          setCurrentQuestion(prev => prev + 1);
-          const nextQuestion = { role: 'assistant', content: INITIAL_QUESTIONS[currentQuestion + 1] };
-          setMessages(prev => [...prev, nextQuestion]);
-        } else {
-          setSetupComplete(true);
-          // Generate initial context-aware response
-          const response = await generateChatResponse(input, context);
-          setMessages(prev => [...prev, { role: 'assistant', content: response }]);
-        }
-      } else {
-        // Normal chat interaction
-        const response = await generateChatResponse(input, context);
-        // Pre-process the response before adding to messages
-        const formattedResponse = preprocessGeminiResponse(response);
-        setMessages(prev => [...prev, { role: 'assistant', content: formattedResponse }]);
-      }
+      const response = await generateChatResponse(input, context);
+      const formattedResponse = preprocessGeminiResponse(response);
+      
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: formattedResponse 
+      }]);
+      
+      // Generate new suggestions based on the conversation
+      generateSuggestions(pathsData);
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, { 
@@ -102,6 +98,7 @@ const Chat = () => {
       }]);
     } finally {
       setLoading(false);
+      setIsTyping(false);
     }
   };
 
@@ -113,17 +110,43 @@ const Chat = () => {
   };
 
   useEffect(() => {
-    // Initialize chat with first question
-    setMessages([{ role: 'assistant', content: INITIAL_QUESTIONS[0] }]);
-  }, []);
+    fetchLearningPaths();
+  }, [user]);
+
+  const fetchLearningPaths = async () => {
+    if (!user) return;
+    
+    try {
+      const response = await databases.listDocuments(
+        import.meta.env.VITE_APPWRITE_DATABASE_ID,
+        import.meta.env.VITE_CAREER_PATHS_COLLECTION_ID,
+        [Query.equal("userID", user.$id)]
+      );
+      
+      setPathsData(response.documents);
+      generateSuggestions(response.documents);
+    } catch (error) {
+      console.error("Error fetching learning paths:", error);
+    }
+  };
+
+  const generateSuggestions = (paths) => {
+    if (!paths) return;
+    
+    const suggestions = [
+      "Help me understand advanced concepts in " + (paths[0]?.careerName || "my career path"),
+      "What should I focus on next in my learning journey?",
+      "Can you explain " + (paths[0]?.modules ? JSON.parse(paths[0].modules)[0] : "the fundamentals"),
+      "Give me practice exercises for " + (paths[0]?.careerName || "my current module"),
+    ];
+    
+    setSuggestions(suggestions);
+  };
 
   const handlePurgeChat = () => {
     const confirmPurge = window.confirm("Are you sure you want to clear the chat history?");
     if (confirmPurge) {
-      setMessages([{ role: 'assistant', content: INITIAL_QUESTIONS[0] }]);
-      setCurrentQuestion(0);
-      setContext({});
-      setSetupComplete(false);
+      setMessages([{ role: 'assistant', content: "👋 Hi! I'm your AI learning assistant. I have access to your learning paths and can help you with specific topics or general guidance. What would you like to discuss?" }]);
     }
   };
 
@@ -205,46 +228,63 @@ const Chat = () => {
     );
   };
 
+  const renderSuggestions = () => (
+    <div className="flex flex-wrap gap-2 px-4 py-2">
+      {suggestions.map((suggestion, index) => (
+        <motion.button
+          key={index}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full text-sm transition-colors"
+          onClick={() => {
+            setInput(suggestion);
+            // Automatically send after a short delay
+            setTimeout(() => handleSend(), 100);
+          }}
+        >
+          {suggestion}
+        </motion.button>
+      ))}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-0 sm:p-6">
       <div className="h-[100dvh] sm:h-auto max-w-4xl mx-auto bg-white/80 backdrop-blur-sm rounded-none sm:rounded-2xl shadow-xl border-0 sm:border border-blue-100/30 overflow-hidden flex flex-col">
-        {/* Enhanced Header with Topic Info */}
-        <div className="p-2 sm:p-6 border-b border-purple-100/30 flex-shrink-0">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
+        {/* Enhanced Header */}
+        <div className="p-4 sm:p-6 border-b border-purple-100/30 bg-white/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="p-2 sm:p-3 bg-blue-100 rounded-lg sm:rounded-xl">
-                  <RiChat1Line className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
-                </div>
-                {setupComplete && (
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 sm:w-4 sm:h-4 bg-green-500 rounded-full border-2 border-white" />
-                )}
+                <motion.div
+                  animate={{
+                    scale: [1, 1.1, 1],
+                    rotate: [0, 5, -5, 0],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    repeatType: "reverse"
+                  }}
+                  className="p-2 sm:p-3 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl"
+                >
+                  <RiRobot2Line className="w-6 h-6 sm:w-7 sm:h-7 text-white" />
+                </motion.div>
+                <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
               </div>
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
-                  AI Chat Assistant
+                  AI Learning Assistant
                 </h1>
-                <div className="flex flex-wrap items-center gap-2 mt-1">
-                  {setupComplete ? (
-                    <>
-                      <span className="px-2 py-0.5 sm:py-1 bg-purple-100 rounded-full text-xs text-purple-600 max-w-[150px] sm:max-w-none truncate">
-                        {context['What topic would you like to discuss today?']}
-                      </span>
-                      <span className="px-2 py-0.5 sm:py-1 bg-blue-100 rounded-full text-xs text-blue-600">
-                        {context["What's your current knowledge level in this topic? (Beginner/Intermediate/Advanced)"]}
-                      </span>
-                    </>
-                  ) : (
-                    <p className="text-sm text-gray-600 flex items-center gap-2">
-                      <RiSettings4Line className="animate-spin text-purple-500" />
-                      Setting up...
-                    </p>
-                  )}
-                </div>
+                {pathsData && (
+                  <p className="text-sm text-gray-600 mt-1">
+                    Supporting your journey in {pathsData[0]?.careerName || "learning"}
+                  </p>
+                )}
               </div>
             </div>
             
-            <div className="flex items-center gap-2 self-end sm:self-auto">
+            <div className="flex items-center gap-2">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -267,89 +307,89 @@ const Chat = () => {
           </div>
         </div>
 
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto p-2 sm:p-6 space-y-3 sm:space-y-6">
-          <AnimatePresence>
-            {messages.map((message, index) => (
+        {/* Enhanced Chat Messages */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+            <AnimatePresence>
+              {messages.map((message, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className={`flex items-start gap-3 ${
+                    message.role === 'user' ? 'flex-row-reverse' : ''
+                  }`}
+                >
+                  <motion.div 
+                    whileHover={{ scale: 1.1 }}
+                    className={`flex-shrink-0 p-1.5 rounded-lg ${
+                      message.role === 'user' 
+                        ? 'bg-gradient-to-br from-blue-500 to-indigo-500' 
+                        : 'bg-gradient-to-br from-gray-100 to-gray-200'
+                    }`}
+                  >
+                    {message.role === 'user' ? (
+                      <RiUserLine className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
+                    ) : (
+                      <RiRobot2Line className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
+                    )}
+                  </motion.div>
+                  <motion.div 
+                    whileHover={{ scale: 1.01 }}
+                    className={`max-w-[88%] sm:max-w-[85%] p-2 sm:p-4 rounded-xl shadow-sm ${
+                      message.role === 'user' 
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white ml-auto rounded-tr-none'
+                        : 'bg-white text-gray-800 rounded-tl-none'
+                    }`}
+                  >
+                    {formatMessage(message.content)}
+                  </motion.div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            
+            {isTyping && (
               <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                className={`flex items-start gap-2 sm:gap-4 ${
-                  message.role === 'user' ? 'flex-row-reverse' : ''
-                }`}
+                className="flex items-center gap-2 text-gray-500"
               >
-                <motion.div 
-                  whileHover={{ scale: 1.1 }}
-                  className={`flex-shrink-0 p-1.5 rounded-lg ${
-                    message.role === 'user' 
-                      ? 'bg-gradient-to-br from-blue-500 to-indigo-500' 
-                      : 'bg-gradient-to-br from-gray-100 to-gray-200'
-                  }`}
-                >
-                  {message.role === 'user' ? (
-                    <RiUserLine className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
-                  ) : (
-                    <RiRobot2Line className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-                  )}
-                </motion.div>
-                <motion.div 
-                  whileHover={{ scale: 1.01 }}
-                  className={`max-w-[88%] sm:max-w-[85%] p-2 sm:p-4 rounded-xl shadow-sm ${
-                    message.role === 'user' 
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white ml-auto rounded-tr-none'
-                      : 'bg-white text-gray-800 rounded-tl-none'
-                  }`}
-                >
-                  {formatMessage(message.content)}
-                </motion.div>
+                <div className="flex items-center gap-1">
+                  <motion.div
+                    animate={{ y: [0, -5, 0] }}
+                    transition={{ duration: 0.5, repeat: Infinity, repeatType: "reverse" }}
+                    className="w-2 h-2 bg-blue-500 rounded-full"
+                  />
+                  <motion.div
+                    animate={{ y: [0, -5, 0] }}
+                    transition={{ duration: 0.5, delay: 0.2, repeat: Infinity, repeatType: "reverse" }}
+                    className="w-2 h-2 bg-blue-500 rounded-full"
+                  />
+                  <motion.div
+                    animate={{ y: [0, -5, 0] }}
+                    transition={{ duration: 0.5, delay: 0.3, repeat: Infinity, repeatType: "reverse" }}
+                    className="w-2 h-2 bg-blue-500 rounded-full"
+                  />
+                </div>
+                <span className="text-sm">AI is thinking...</span>
               </motion.div>
-            ))}
-          </AnimatePresence>
-          
-          {/* Enhanced Loading Animation */}
-          {loading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex items-center gap-3"
-            >
-              <div className="p-2 bg-blue-100 rounded-xl">
-                <RiTimeLine className="w-5 h-5 text-blue-600 animate-spin" />
-              </div>
-              <div className="flex items-center gap-1">
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1, repeat: Infinity }}
-                  className="w-2 h-2 bg-purple-600 rounded-full"
-                />
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1, repeat: Infinity, delay: 0.2 }}
-                  className="w-2 h-2 bg-purple-600 rounded-full"
-                />
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1, repeat: Infinity, delay: 0.4 }}
-                  className="w-2 h-2 bg-purple-600 rounded-full"
-                />
-              </div>
-            </motion.div>
-          )}
-          <div ref={chatEndRef} />
+            )}
+          </div>
+          {/* Show suggestions above input */}
+          {!isTyping && renderSuggestions()}
         </div>
 
-        {/* Enhanced Input Area - Fixed at bottom on mobile */}
-        <div className="p-2 sm:p-4 border-t border-purple-100/30 bg-white/50 sticky bottom-0 left-0 right-0">
-          <div className="flex items-end gap-2 sm:gap-4 max-w-full">
+        {/* Enhanced Input Area */}
+        <div className="border-t border-purple-100/30 bg-white/50 p-4">
+          <div className="flex items-end gap-3 max-w-4xl mx-auto">
             <div className="flex-1 bg-white rounded-xl shadow-sm">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={setupComplete ? "Type your message..." : "Type your answer..."}
-                className="w-full p-2.5 sm:p-4 rounded-xl border border-purple-100 focus:border-purple-300 focus:ring-2 focus:ring-purple-200 outline-none resize-none bg-transparent text-sm sm:text-base"
+                placeholder="Ask me anything about your learning journey..."
+                className="w-full p-3 rounded-xl border border-blue-100 focus:border-blue-300 focus:ring-2 focus:ring-blue-200 outline-none resize-none bg-transparent"
                 rows="1"
                 style={{
                   minHeight: '44px',
@@ -366,61 +406,12 @@ const Chat = () => {
               whileTap={{ scale: 0.95 }}
               onClick={handleSend}
               disabled={loading || !input.trim()}
-              className="p-2.5 sm:p-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl disabled:opacity-50 shadow-lg hover:shadow-blue-500/20 flex-shrink-0"
+              className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl disabled:opacity-50 shadow-lg hover:shadow-blue-500/20"
             >
               <RiSendPlaneFill className="w-5 h-5" />
             </motion.button>
           </div>
-          {setupComplete && (
-            <p className="text-xs text-gray-500 mt-2 px-2">
-              Tip: Use ```language for code blocks
-            </p>
-          )}
         </div>
-
-        {/* Mobile Action Menu Portal */}
-        {isMobileMenuOpen && (
-          <Portal>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/50 z-50"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <motion.div
-                initial={{ y: '100%' }}
-                animate={{ y: 0 }}
-                exit={{ y: '100%' }}
-                className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl p-4"
-                onClick={e => e.stopPropagation()}
-              >
-                <div className="space-y-2">
-                  <button
-                    onClick={() => {
-                      window.location.reload();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full p-3 flex items-center gap-3 text-purple-600 hover:bg-purple-50 rounded-xl"
-                  >
-                    <RiRefreshLine className="w-5 h-5" />
-                    <span>New Chat</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      handlePurgeChat();
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className="w-full p-3 flex items-center gap-3 text-red-500 hover:bg-red-50 rounded-xl"
-                  >
-                    <RiDeleteBin6Line className="w-5 h-5" />
-                    <span>Clear Chat</span>
-                  </button>
-                </div>
-              </motion.div>
-            </motion.div>
-          </Portal>
-        )}
       </div>
     </div>
   );
